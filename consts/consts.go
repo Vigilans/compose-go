@@ -33,6 +33,9 @@ const (
 	ServiceMapping   = "service"
 	ImageMapping     = "image"
 	ContainerMapping = "container"
+
+	NetworkMapping = "network"
+	VolumeMapping  = "volume"
 )
 
 type ComposeFileKey struct{}
