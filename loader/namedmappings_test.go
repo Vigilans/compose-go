@@ -183,6 +183,81 @@ func TestModelNamedMappingsResolverWithVolumeMapping(t *testing.T) {
 	assertInterpolateModel(t, env, model, expected)
 }
 
+// Tests ConfigMapping/SecretMapping
+func TestModelNamedMappingsResolverWithConfigAndSecretMapping(t *testing.T) {
+	env := map[string]string{
+		"USER": "test-user",
+		"PWD":  os.Getenv("PWD"),
+	}
+	model := map[string]interface{}{
+		"name": "test-project",
+		"configs": map[string]interface{}{
+			"config_1": map[string]interface{}{
+				"name":         "${config[content]}-config",
+				"content":      "test",
+				"x-test-field": "${config[name]} ${config[content]} ${config[data]}",
+			},
+			"config_2": map[string]interface{}{
+				"environment":  "USER",
+				"x-test-field": "${config[name]} ${config[environment]} ${config[data]}",
+			},
+			"config_3": map[string]interface{}{
+				"external":     true,
+				"file":         "testdata/file/user.txt",
+				"x-test-field": "${config[name]} ${config[file]} ${config[data]}",
+			},
+		},
+		"secrets": map[string]interface{}{
+			"secret_1": map[string]interface{}{
+				"content":      "test",
+				"x-test-field": "${secret[data]}",
+			},
+			"secret_2": map[string]interface{}{
+				"environment":  "PWD",
+				"x-test-field": "${secret[data]}",
+			},
+			"secret_3": map[string]interface{}{
+				"file":         "testdata/file/access_key.txt",
+				"x-test-field": "${secret[data]}",
+			},
+		},
+	}
+	expected := map[string]interface{}{
+		"name": "test-project",
+		"configs": map[string]interface{}{
+			"config_1": map[string]interface{}{
+				"name":         "test-config",
+				"content":      "test",
+				"x-test-field": "test-config test test",
+			},
+			"config_2": map[string]interface{}{
+				"environment":  "USER",
+				"x-test-field": "test-project_config_2 USER test-user",
+			},
+			"config_3": map[string]interface{}{
+				"external":     true,
+				"file":         "testdata/file/user.txt",
+				"x-test-field": fmt.Sprintf("config_3 %s/testdata/file/user.txt test-user", os.Getenv("PWD")),
+			},
+		},
+		"secrets": map[string]interface{}{
+			"secret_1": map[string]interface{}{
+				"content":      "test",
+				"x-test-field": "test",
+			},
+			"secret_2": map[string]interface{}{
+				"environment":  "PWD",
+				"x-test-field": os.Getenv("PWD"),
+			},
+			"secret_3": map[string]interface{}{
+				"file":         "testdata/file/access_key.txt",
+				"x-test-field": "12345678-abcd-11ef-a236-d7497f4e9904",
+			},
+		},
+	}
+	assertInterpolateModel(t, env, model, expected)
+}
+
 func TestModelNamedMappingsResolverWithCycledLookup(t *testing.T) {
 	var testcases = []struct {
 		model   map[string]interface{}
