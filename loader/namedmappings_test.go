@@ -91,6 +91,98 @@ func TestModelNamedMappingsResolverWithServiceMapping(t *testing.T) {
 	assertInterpolateModel(t, env, model, expected)
 }
 
+// Tests NetworkMapping
+func TestModelNamedMappingsResolverWithNetworkMapping(t *testing.T) {
+	env := map[string]string{
+		"USER": "test-user",
+		"PWD":  os.Getenv("PWD"),
+		"TRUE": "true",
+	}
+	model := map[string]interface{}{
+		"name": "test-project",
+		"networks": map[string]interface{}{
+			"network_1": map[string]interface{}{
+				"name":         "${network[driver]}-network",
+				"external":     "${env[TRUE]}",
+				"driver":       "bridge",
+				"x-test-field": "${network[name]} ${network[external]}",
+			},
+			"network_2": map[string]interface{}{
+				"external":     "${env[TRUE]}",
+				"x-test-field": "${network[name]} ${network[external]}",
+			},
+			"network_3": map[string]interface{}{
+				"x-test-field": "${network[name]} ${network[external]}",
+			},
+		},
+	}
+	expected := map[string]interface{}{
+		"name": "test-project",
+		"networks": map[string]interface{}{
+			"network_1": map[string]interface{}{
+				"name":         "bridge-network",
+				"external":     true,
+				"driver":       "bridge",
+				"x-test-field": "bridge-network true",
+			},
+			"network_2": map[string]interface{}{
+				"external":     true,
+				"x-test-field": "network_2 true",
+			},
+			"network_3": map[string]interface{}{
+				"x-test-field": "test-project_network_3 false",
+			},
+		},
+	}
+	assertInterpolateModel(t, env, model, expected)
+}
+
+// Tests VolumeMapping
+func TestModelNamedMappingsResolverWithVolumeMapping(t *testing.T) {
+	env := map[string]string{
+		"USER": "test-user",
+		"PWD":  os.Getenv("PWD"),
+		"TRUE": "true",
+	}
+	model := map[string]interface{}{
+		"name": "test-project",
+		"volumes": map[string]interface{}{
+			"volume_1": map[string]interface{}{
+				"name":         "${volume[driver]}-volume",
+				"external":     "${env[TRUE]}",
+				"driver":       "overlay",
+				"x-test-field": "${volume[name]} ${volume[external]}",
+			},
+			"volume_2": map[string]interface{}{
+				"external":     "${env[TRUE]}",
+				"x-test-field": "${volume[name]} ${volume[external]}",
+			},
+			"volume_3": map[string]interface{}{
+				"x-test-field": "${volume[name]} ${volume[external]}",
+			},
+		},
+	}
+	expected := map[string]interface{}{
+		"name": "test-project",
+		"volumes": map[string]interface{}{
+			"volume_1": map[string]interface{}{
+				"name":         "overlay-volume",
+				"external":     true,
+				"driver":       "overlay",
+				"x-test-field": "overlay-volume true",
+			},
+			"volume_2": map[string]interface{}{
+				"external":     true,
+				"x-test-field": "volume_2 true",
+			},
+			"volume_3": map[string]interface{}{
+				"x-test-field": "test-project_volume_3 false",
+			},
+		},
+	}
+	assertInterpolateModel(t, env, model, expected)
+}
+
 func TestModelNamedMappingsResolverWithCycledLookup(t *testing.T) {
 	var testcases = []struct {
 		model   map[string]interface{}
