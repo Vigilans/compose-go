@@ -42,6 +42,107 @@ func TestModelNamedMappingsResolverWithProjectMapping(t *testing.T) {
 	assertInterpolateModel(t, env, model, expected)
 }
 
+// Tests ServiceMapping/ImageMapping/ContainerMapping
+func TestModelNamedMappingsResolverWithServiceMapping(t *testing.T) {
+	env := map[string]string{
+		"USER": "test-user",
+		"PWD":  os.Getenv("PWD"),
+	}
+	model := map[string]interface{}{
+		"services": map[string]interface{}{
+			"service_1": map[string]interface{}{
+				"image":          "image:${service[name]}",
+				"container_name": "container.${service[name]}",
+				"user":           "${env[USER]}",
+				"working_dir":    "${env[PWD]}",
+				"x-test-field-1": "${image[name]} ${container[name]} ${service[scale]}",
+				"x-test-field-2": "${container[user]} ${container[working-dir]}",
+			},
+			"service_2": map[string]interface{}{
+				"scale":        2,
+				"x-test-field": "${service[scale]}",
+			},
+			"service_3": map[string]interface{}{
+				"deploy":       map[string]interface{}{"replicas": 3},
+				"x-test-field": "${service[scale]}",
+			},
+		},
+	}
+	expected := map[string]interface{}{
+		"services": map[string]interface{}{
+			"service_1": map[string]interface{}{
+				"image":          "image:service_1",
+				"container_name": "container.service_1",
+				"user":           "test-user",
+				"working_dir":    os.Getenv("PWD"),
+				"x-test-field-1": "image:service_1 container.service_1 1",
+				"x-test-field-2": fmt.Sprintf("test-user %s", os.Getenv("PWD")),
+			},
+			"service_2": map[string]interface{}{
+				"scale":        2,
+				"x-test-field": "2",
+			},
+			"service_3": map[string]interface{}{
+				"deploy":       map[string]interface{}{"replicas": 3},
+				"x-test-field": "3",
+			},
+		},
+	}
+	assertInterpolateModel(t, env, model, expected)
+}
+
+func TestModelNamedMappingsResolverWithCycledLookup(t *testing.T) {
+	var testcases = []struct {
+		model   map[string]interface{}
+		errMsgs []string
+	}{
+		{ // Test image name references itself
+			model: map[string]interface{}{
+				"services": map[string]interface{}{
+					"service_1": map[string]interface{}{
+						"image": "image:${image[name]}",
+					},
+				},
+			},
+			errMsgs: []string{
+				`error while interpolating services.service_1.image: failed to interpolate model: ` +
+					`error while interpolating services.service_1.image: lookup cycle detected: image[name]`,
+			},
+		},
+	}
+
+	for _, tc := range testcases {
+		modelYAML, err := yaml.Marshal(tc.model)
+		assert.NilError(t, err)
+
+		env := map[string]string{
+			"USER":  "jenny",
+			"FOO":   "bar",
+			"count": "5",
+		}
+		configDetails := buildConfigDetails(string(modelYAML), env)
+		opts := toOptions(&configDetails, nil)
+
+		resolvers := []interp.NamedMappingsResolver{
+			interp.EnvNamedMappingsResolver{},
+			NewModelNamedMappingsResolver(configDetails, opts),
+		}
+		interpOpts := *opts.Interpolate
+		namedMappings, err := interp.ResolveNamedMappings(context.Background(), tc.model, interpOpts, resolvers)
+		assert.NilError(t, err)
+
+		// Check interpolated result
+		interpOpts.NamedMappings = namedMappings
+		_, err = interp.Interpolate(tc.model, interpOpts)
+		if len(tc.errMsgs) > 0 {
+			assert.Assert(t, err != nil, "This should result in an error")
+			assert.Check(t, is.Contains(tc.errMsgs, err.Error()))
+		} else {
+			assert.NilError(t, err)
+		}
+	}
+}
+
 func assertInterpolateModel(t *testing.T, env map[string]string, model map[string]any, expected map[string]any) {
 	t.Helper()
 
