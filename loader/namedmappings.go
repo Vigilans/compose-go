@@ -58,7 +58,7 @@ func (r *modelNamedMappingsResolver) Accept(path tree.Path) bool {
 	}
 	parts := path.Parts()
 	if len(parts) == 2 {
-		return parts[0] == "services" || parts[0] == "networks" || parts[0] == "volumes"
+		return parts[0] == "services" || parts[0] == "networks" || parts[0] == "volumes" || parts[0] == "configs" || parts[0] == "secrets"
 	}
 	return false
 }
@@ -91,6 +91,14 @@ func (r *modelNamedMappingsResolver) Resolve(ctx context.Context, value interfac
 	case path.Matches(tree.NewPath("volumes", tree.PathMatchAll)):
 		return template.NamedMappings{
 			consts.VolumeMapping: func(key string) (string, bool) { return r.volumeMapping(scope, key) },
+		}, nil
+	case path.Matches(tree.NewPath("configs", tree.PathMatchAll)):
+		return template.NamedMappings{
+			consts.ConfigMapping: func(key string) (string, bool) { return r.configMapping(scope, key) },
+		}, nil
+	case path.Matches(tree.NewPath("secrets", tree.PathMatchAll)):
+		return template.NamedMappings{
+			consts.SecretMapping: func(key string) (string, bool) { return r.secretMapping(scope, key) },
 		}, nil
 	default:
 		return nil, fmt.Errorf("unsupported path for modelNamedMappingsResolver: %s", path)
@@ -196,6 +204,20 @@ func (r *modelNamedMappingsResolver) volumeMapping(scope *modelNamedMappingsScop
 	return "", false
 }
 
+func (r *modelNamedMappingsResolver) configMapping(scope *modelNamedMappingsScope, key string) (string, bool) {
+	if value, ok := r.resourceMapping(scope, consts.ConfigMapping, key); ok {
+		return value, ok
+	}
+	return r.fileObjectMapping(scope, consts.ConfigMapping, key)
+}
+
+func (r *modelNamedMappingsResolver) secretMapping(scope *modelNamedMappingsScope, key string) (string, bool) {
+	if value, ok := r.resourceMapping(scope, consts.ConfigMapping, key); ok {
+		return value, ok
+	}
+	return r.fileObjectMapping(scope, consts.ConfigMapping, key)
+}
+
 func (r *modelNamedMappingsResolver) resourceMapping(scope *modelNamedMappingsScope, name string, key string) (string, bool) {
 	switch resource := scope.value.(map[string]interface{}); key {
 	case "name", "external":
@@ -226,6 +248,49 @@ func (r *modelNamedMappingsResolver) resourceMapping(scope *modelNamedMappingsSc
 				scope.caches[name]["name"] = &resourceName
 				return external, true
 			}
+		})
+	}
+	return "", false
+}
+
+func (r *modelNamedMappingsResolver) fileObjectMapping(scope *modelNamedMappingsScope, name string, key string) (string, bool) {
+	switch fileObject := scope.value.(map[string]interface{}); key {
+	case "file":
+		return scope.cachedMapping(name, key, func() (string, bool) {
+			if value := fileObject["file"]; value != nil {
+				model := wrapValueWithPath(scope.path.Next("file"), value)
+				model = utils.Must(interp.Interpolate(model, scope.opts))
+				model = utils.Must(model, paths.ResolveRelativePaths(model, r.configDetails.WorkingDir, r.opts.RemoteResourceFilters()))
+				return unwrapValueWithPath(scope.path.Next("file"), model).(string), true
+			}
+			return "", false
+		})
+	case "environment":
+		return scope.cachedMapping(name, key, func() (string, bool) {
+			if value := fileObject["environment"]; value != nil {
+				return utils.Must(interpolateWithPath(scope.path.Next("environment"), value, scope.opts)).(string), true
+			}
+			return "", false
+		})
+	case "content":
+		return scope.cachedMapping(name, key, func() (string, bool) {
+			if value := fileObject["content"]; value != nil {
+				return utils.Must(interpolateWithPath(scope.path.Next("content"), value, scope.opts)).(string), true
+			}
+			return "", false
+		})
+	case "data":
+		return scope.cachedMapping(name, key, func() (string, bool) {
+			if env, ok := r.fileObjectMapping(scope, name, "environment"); ok {
+				return r.configDetails.Environment[env], true
+			}
+			if file, ok := r.fileObjectMapping(scope, name, "file"); ok {
+				return string(utils.Must(os.ReadFile(file))), true
+			}
+			if content, ok := r.fileObjectMapping(scope, name, "content"); ok {
+				return content, true
+			}
+			return "", false
 		})
 	}
 	return "", false
