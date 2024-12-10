@@ -24,6 +24,81 @@ import (
 	"github.com/compose-spec/compose-go/v2/tree"
 )
 
+type NamedMappingsResolver interface {
+	// Accept returns true if the resolver can resolve named mappings for model's value at the given path
+	Accept(path tree.Path) bool
+
+	// Resolve resolves named mappings based on model's value at the given path
+	Resolve(ctx context.Context, value interface{}, path tree.Path, opts Options) (template.NamedMappings, error)
+}
+
+type EnvNamedMappingsResolver struct{}
+
+func (r EnvNamedMappingsResolver) Accept(path tree.Path) bool {
+	return path == "" // EnvNamedMappingsResolver applies at global level
+}
+
+func (r EnvNamedMappingsResolver) Resolve(ctx context.Context, value interface{}, path tree.Path, opts Options) (template.NamedMappings, error) {
+	return template.NamedMappings{
+		consts.HostEnvMapping: template.Mapping(opts.LookupValue),
+	}, nil
+}
+
+func ResolveNamedMappings(ctx context.Context, value interface{}, opts Options, resolvers []NamedMappingsResolver) (namedMappings map[tree.Path]template.NamedMappings, err error) {
+	namedMappings = map[tree.Path]template.NamedMappings{}
+
+	// Deep copy namedMappings from opts as initial
+	for path, mappings := range opts.NamedMappings {
+		namedMappings[path] = template.NamedMappings{}
+		for key, mapping := range mappings {
+			namedMappings[path][key] = mapping
+		}
+	}
+	opts.NamedMappings = namedMappings // All resolvers will use and update this same underlying named mappings
+
+	for _, resolver := range resolvers {
+		err := recursiveResolveNamedMappings(ctx, value, tree.NewPath(), opts, resolver, namedMappings)
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	return namedMappings, nil
+}
+
+func recursiveResolveNamedMappings(ctx context.Context, value interface{}, path tree.Path, opts Options, resolver NamedMappingsResolver, namedMappings map[tree.Path]template.NamedMappings) error {
+	if resolver.Accept(path) {
+		resolved, err := resolver.Resolve(ctx, value, path, opts)
+		if err != nil {
+			return err
+		}
+		if mappings, ok := namedMappings[path]; ok {
+			namedMappings[path] = mappings.Merge(resolved) // The early resolved named mappings take priority
+		} else {
+			namedMappings[path] = resolved
+		}
+	}
+
+	switch value := value.(type) {
+	case map[string]interface{}:
+		for key, elem := range value {
+			err := recursiveResolveNamedMappings(ctx, elem, path.Next(key), opts, resolver, namedMappings)
+			if err != nil {
+				return err
+			}
+		}
+	case []interface{}:
+		for _, elem := range value {
+			err := recursiveResolveNamedMappings(ctx, elem, tree.PathMatchList, opts, resolver, namedMappings)
+			if err != nil {
+				return err
+			}
+		}
+	}
+
+	return nil
+}
+
 func MergeNamedMappings(namedMappings map[tree.Path]template.NamedMappings, other map[tree.Path]template.NamedMappings) map[tree.Path]template.NamedMappings {
 	merged := map[tree.Path]template.NamedMappings{}
 

@@ -26,4 +26,8 @@ const (
 
 const Extensions = "#extensions" // Using # prefix, we prevent risk to conflict with an actual yaml key
 
+const (
+	HostEnvMapping = "env"
+)
+
 type ComposeFileKey struct{}
