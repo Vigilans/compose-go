@@ -38,6 +38,9 @@ const (
 	VolumeMapping  = "volume"
 	ConfigMapping  = "config"
 	SecretMapping  = "secret"
+
+	ContainerEnvMapping = "containerEnv"
+	LabelsMapping       = "labels"
 )
 
 type ComposeFileKey struct{}

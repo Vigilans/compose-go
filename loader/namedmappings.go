@@ -83,22 +83,28 @@ func (r *modelNamedMappingsResolver) Resolve(ctx context.Context, value interfac
 			consts.ServiceMapping:      func(key string) (string, bool) { return r.serviceMapping(scope, key) },
 			consts.ImageMapping:        func(key string) (string, bool) { return r.imageMapping(scope, key) },
 			consts.ContainerMapping:    func(key string) (string, bool) { return r.containerMapping(scope, key) },
+			consts.ContainerEnvMapping: func(key string) (string, bool) { return r.containerEnvMapping(scope, key) },
+			consts.LabelsMapping:       func(key string) (string, bool) { return r.labelsMapping(scope, consts.ServiceMapping, key) },
 		}, nil
 	case path.Matches(tree.NewPath("networks", tree.PathMatchAll)):
 		return template.NamedMappings{
 			consts.NetworkMapping: func(key string) (string, bool) { return r.networkMapping(scope, key) },
+			consts.LabelsMapping:  func(key string) (string, bool) { return r.labelsMapping(scope, consts.NetworkMapping, key) },
 		}, nil
 	case path.Matches(tree.NewPath("volumes", tree.PathMatchAll)):
 		return template.NamedMappings{
 			consts.VolumeMapping: func(key string) (string, bool) { return r.volumeMapping(scope, key) },
+			consts.LabelsMapping: func(key string) (string, bool) { return r.labelsMapping(scope, consts.VolumeMapping, key) },
 		}, nil
 	case path.Matches(tree.NewPath("configs", tree.PathMatchAll)):
 		return template.NamedMappings{
 			consts.ConfigMapping: func(key string) (string, bool) { return r.configMapping(scope, key) },
+			consts.LabelsMapping: func(key string) (string, bool) { return r.labelsMapping(scope, consts.ConfigMapping, key) },
 		}, nil
 	case path.Matches(tree.NewPath("secrets", tree.PathMatchAll)):
 		return template.NamedMappings{
 			consts.SecretMapping: func(key string) (string, bool) { return r.secretMapping(scope, key) },
+			consts.LabelsMapping: func(key string) (string, bool) { return r.labelsMapping(scope, consts.SecretMapping, key) },
 		}, nil
 	default:
 		return nil, fmt.Errorf("unsupported path for modelNamedMappingsResolver: %s", path)
@@ -294,6 +300,91 @@ func (r *modelNamedMappingsResolver) fileObjectMapping(scope *modelNamedMappings
 		})
 	}
 	return "", false
+}
+
+func (r *modelNamedMappingsResolver) containerEnvMapping(scope *modelNamedMappingsScope, key string) (string, bool) {
+	return scope.cachedMapping(consts.ContainerEnvMapping, key, func() (string, bool) {
+		// Cache for holding all uninterpolated env variables
+		uninterpolatedEnv, ok := scope.caches["uninterpolatedEnv"]
+		if !ok {
+			// Only use .environment and .env_file fields to forge uninterpolated env variables
+			model := wrapValueWithPath(scope.path, extractValueSubset(scope.value, tree.NewPath("environment"), tree.NewPath("env_file")))
+
+			// Apply Canonical to reuse `transformEnvFile` logic
+			model = utils.Must(transform.Canonical(model, false))
+
+			// Resolve env_file path to absolute
+			utils.Must(model, paths.ResolveRelativePaths(model, r.configDetails.WorkingDir, r.opts.RemoteResourceFilters()))
+
+			// Apply modelToProject to reuse `WithServicesEnvironmentResolved` logic
+			project := utils.Must(r.modelToProject(model))
+
+			// Fetch resolved `Environment` field as cache
+			uninterpolatedEnv = project.Services[scope.path.Last()].Environment
+			scope.caches["uninterpolatedEnv"] = uninterpolatedEnv
+		}
+
+		// We can early return if the key is not present in the mapping
+		if value, ok := uninterpolatedEnv[key]; !ok || value == nil {
+			return "", false
+		}
+
+		// Interpolate only one key-value pair here
+		// So uninterpolated values in other fields won't affect
+		return utils.Must(interpolateWithPath(scope.path.Next("environment").Next(key), *uninterpolatedEnv[key], scope.opts)).(string), true
+	})
+}
+
+func (r *modelNamedMappingsResolver) labelsMapping(scope *modelNamedMappingsScope, elementType string, key string) (string, bool) {
+	return scope.cachedMapping(consts.LabelsMapping, key, func() (string, bool) {
+		// Cache for holding all uninterpolated labels
+		uninterpolatedLabels, ok := scope.caches["uninterpolatedLabels"]
+		if !ok {
+			model := wrapValueWithPath(scope.path, extractValueSubset(scope.value, tree.NewPath("labels"), tree.NewPath("label_file")))
+
+			// Apply Canonical to reuse `transformStringOrList` logic for label_file
+			model = utils.Must(transform.Canonical(model, false))
+
+			// Resolve label_file path to absolute
+			utils.Must(model, paths.ResolveRelativePaths(model, r.configDetails.WorkingDir, r.opts.RemoteResourceFilters()))
+
+			// Apply modelToProject to reuse `Labels.DecodeMapstructure` logic
+			project := utils.Must(r.modelToProject(model))
+
+			var labels types.Labels
+			switch elementName := scope.path.Last(); elementType {
+			case consts.ServiceMapping:
+				labels = project.Services[elementName].Labels
+			case consts.NetworkMapping:
+				labels = project.Networks[elementName].Labels
+			case consts.VolumeMapping:
+				labels = project.Volumes[elementName].Labels
+			case consts.ConfigMapping:
+				labels = project.Configs[elementName].Labels
+			case consts.SecretMapping:
+				labels = project.Secrets[elementName].Labels
+			default:
+				panic(fmt.Errorf("unsupported element type in labelNamedMapping: %s", elementType))
+			}
+			uninterpolatedLabels = types.Mapping(labels).ToMappingWithEquals()
+			scope.caches["uninterpolatedLabels"] = uninterpolatedLabels
+		}
+
+		// We can early return if the key is not present in the mapping
+		if value, ok := uninterpolatedLabels[key]; !ok || value == nil {
+			return "", false
+		}
+
+		// Interpolate only one key-value pair here
+		// So uninterpolated values in other fields won't affect
+		return utils.Must(interpolateWithPath(scope.path.Next("labels").Next(key), *uninterpolatedLabels[key], scope.opts)).(string), true
+	})
+}
+
+func (r *modelNamedMappingsResolver) modelToProject(model map[string]interface{}) (*types.Project, error) {
+	opts := r.opts.clone()
+	opts.SkipConsistencyCheck = true
+	return modelToProject(model, opts, r.configDetails)
 }
 
 func (s *modelNamedMappingsScope) cachedMapping(name string, key string, onCacheMiss func() (string, bool)) (string, bool) {
