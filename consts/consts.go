@@ -36,6 +36,8 @@ const (
 
 	NetworkMapping = "network"
 	VolumeMapping  = "volume"
+	ConfigMapping  = "config"
+	SecretMapping  = "secret"
 )
 
 type ComposeFileKey struct{}
