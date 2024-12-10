@@ -33,6 +33,8 @@ type Options struct {
 	TypeCastMapping map[tree.Path]Cast
 	// Substitution function to use
 	Substitute func(string, template.Mapping) (string, error)
+	// NamedMappings for a custom LookupValue from a key giving specific path prefix
+	NamedMappings map[tree.Path]template.NamedMappings
 }
 
 // LookupValue is a function which maps from variable names to values.
@@ -56,23 +58,25 @@ func Interpolate(config map[string]interface{}, opts Options) (map[string]interf
 		opts.Substitute = template.Substitute
 	}
 
-	out := map[string]interface{}{}
-
-	for key, value := range config {
-		interpolatedValue, err := recursiveInterpolate(value, tree.NewPath(key), opts)
-		if err != nil {
-			return out, err
-		}
-		out[key] = interpolatedValue
-	}
-
-	return out, nil
+	out, err := recursiveInterpolate(config, tree.NewPath(), opts, nil)
+	return out.(map[string]interface{}), err
 }
 
-func recursiveInterpolate(value interface{}, path tree.Path, opts Options) (interface{}, error) {
+func recursiveInterpolate(value interface{}, path tree.Path, opts Options, namedMappings template.NamedMappings) (interface{}, error) {
+	if opts.NamedMappings != nil {
+		if prefixNamedMappings, ok := opts.NamedMappings[path]; ok {
+			namedMappings = prefixNamedMappings.Merge(namedMappings) // Longer prefix match takes priority
+		}
+	}
 	switch value := value.(type) {
 	case string:
-		newValue, err := opts.Substitute(value, template.Mapping(opts.LookupValue))
+		var newValue string
+		var err error
+		if namedMappings != nil {
+			newValue, err = template.SubstituteWithOptions(value, template.Mapping(opts.LookupValue), template.WithNamedMappings(namedMappings))
+		} else {
+			newValue, err = opts.Substitute(value, template.Mapping(opts.LookupValue))
+		}
 		if err != nil {
 			return value, newPathError(path, err)
 		}
@@ -89,9 +93,9 @@ func recursiveInterpolate(value interface{}, path tree.Path, opts Options) (inte
 	case map[string]interface{}:
 		out := map[string]interface{}{}
 		for key, elem := range value {
-			interpolatedElem, err := recursiveInterpolate(elem, path.Next(key), opts)
+			interpolatedElem, err := recursiveInterpolate(elem, path.Next(key), opts, namedMappings)
 			if err != nil {
-				return nil, err
+				return out, err
 			}
 			out[key] = interpolatedElem
 		}
@@ -100,9 +104,9 @@ func recursiveInterpolate(value interface{}, path tree.Path, opts Options) (inte
 	case []interface{}:
 		out := make([]interface{}, len(value))
 		for i, elem := range value {
-			interpolatedElem, err := recursiveInterpolate(elem, path.Next(tree.PathMatchList), opts)
+			interpolatedElem, err := recursiveInterpolate(elem, path.Next(tree.PathMatchList), opts, namedMappings)
 			if err != nil {
-				return nil, err
+				return out, err
 			}
 			out[i] = interpolatedElem
 		}
