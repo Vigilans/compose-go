@@ -258,6 +258,160 @@ func TestModelNamedMappingsResolverWithConfigAndSecretMapping(t *testing.T) {
 	assertInterpolateModel(t, env, model, expected)
 }
 
+// Tests LabelsMapping/ContainerEnvMapping
+func TestModelNamedMappingsResolverWithLabelsAndContainerEnvMapping(t *testing.T) {
+	env := map[string]string{
+		"USER":  "jenny",
+		"FOO":   "bar",
+		"count": "5",
+	}
+	model := map[string]interface{}{
+		"services": map[string]interface{}{
+			"service_0": map[string]interface{}{ // Nil environment and label field should not cause error
+				"container_name": "service-${containerEnv[NUMBER]:-0}${labels[com.docker.compose.container-number]}",
+			},
+			"service_1": map[string]interface{}{ // Container name number <- containerEnv
+				"container_name": "service-${containerEnv[NUMBER]}",
+				"environment": map[string]interface{}{
+					"TESTVAR": "{{{ ${env[USER]} ${FOO} ${containerEnv[NUMBER]} ${containerEnv[NONEXIST]} }}}",
+					"NUMBER":  "1",
+				},
+			},
+			"service_2": map[string]interface{}{ // Container name number <- containerEnv <- label
+				"container_name": "service-${containerEnv[NUMBER]}",
+				"environment": map[string]interface{}{
+					"TESTVAR": "{{{ ${env[${labels[user]}]} ${FOO} ${containerEnv[NUMBER]} ${containerEnv[NONEXIST]} }}}",
+					"NUMBER":  "${labels[com.docker.compose.container-number]}",
+				},
+				"labels": map[string]interface{}{
+					"com.docker.compose.container-number": "2",
+					"user":                                "USER",
+				},
+			},
+			"service_3": map[string]interface{}{ // Container name number <- containerEnv <- label (key from env_file)
+				"container_name": "service-${containerEnv[NUMBER]}",
+				"environment": map[string]interface{}{
+					"TESTVAR": "{{{ ${env[${labels[user]}]} ${FOO} ${containerEnv[NUMBER]} ${containerEnv[NONEXIST]} }}}",
+					"NUMBER":  "${labels[${containerEnv[FOO]}]}",
+				},
+				"labels": map[string]interface{}{
+					"com.docker.compose.container-number": "2",
+					"user":                                "USER",
+					"foo_from_env_file":                   "3",
+				},
+				"env_file": []any{
+					"example1.env",
+				},
+			},
+		},
+		"networks": map[string]interface{}{
+			"network_1": map[string]interface{}{
+				"name": "network-${labels[com.docker.compose.network-number]}",
+				"labels": map[string]interface{}{
+					"com.docker.compose.network-number": "1",
+				},
+			},
+		},
+		"volumes": map[string]interface{}{
+			"volume_1": map[string]interface{}{
+				"name": "volume-${labels[com.docker.compose.volume-number]}",
+				"labels": map[string]interface{}{
+					"com.docker.compose.volume-number": "1",
+				},
+			},
+		},
+		"configs": map[string]interface{}{
+			"config_1": map[string]interface{}{
+				"name": "config-${labels[com.docker.compose.config-number]}",
+				"labels": map[string]interface{}{
+					"com.docker.compose.config-number": "1",
+				},
+			},
+		},
+		"secrets": map[string]interface{}{
+			"secret_1": map[string]interface{}{
+				"name": "secret-${labels[com.docker.compose.secret-number]}",
+				"labels": map[string]interface{}{
+					"com.docker.compose.secret-number": "1",
+				},
+			},
+		},
+	}
+	expected := map[string]interface{}{
+		"services": map[string]interface{}{
+			"service_0": map[string]interface{}{ // Nil environment and label field should not cause error
+				"container_name": "service-0",
+			},
+			"service_1": map[string]interface{}{
+				"container_name": "service-1",
+				"environment": map[string]interface{}{
+					"TESTVAR": "{{{ jenny bar 1  }}}",
+					"NUMBER":  "1",
+				},
+			},
+			"service_2": map[string]interface{}{
+				"container_name": "service-2",
+				"environment": map[string]interface{}{
+					"TESTVAR": "{{{ jenny bar 2  }}}",
+					"NUMBER":  "2",
+				},
+				"labels": map[string]interface{}{
+					"com.docker.compose.container-number": "2",
+					"user":                                "USER",
+				},
+			},
+			"service_3": map[string]interface{}{
+				"container_name": "service-3",
+				"environment": map[string]interface{}{
+					"TESTVAR": "{{{ jenny bar 3  }}}",
+					"NUMBER":  "3",
+				},
+				"labels": map[string]interface{}{
+					"com.docker.compose.container-number": "2",
+					"user":                                "USER",
+					"foo_from_env_file":                   "3",
+				},
+				"env_file": []any{
+					"example1.env",
+				},
+			},
+		},
+		"networks": map[string]interface{}{
+			"network_1": map[string]interface{}{
+				"name": "network-1",
+				"labels": map[string]interface{}{
+					"com.docker.compose.network-number": "1",
+				},
+			},
+		},
+		"volumes": map[string]interface{}{
+			"volume_1": map[string]interface{}{
+				"name": "volume-1",
+				"labels": map[string]interface{}{
+					"com.docker.compose.volume-number": "1",
+				},
+			},
+		},
+		"configs": map[string]interface{}{
+			"config_1": map[string]interface{}{
+				"name": "config-1",
+				"labels": map[string]interface{}{
+					"com.docker.compose.config-number": "1",
+				},
+			},
+		},
+		"secrets": map[string]interface{}{
+			"secret_1": map[string]interface{}{
+				"name": "secret-1",
+				"labels": map[string]interface{}{
+					"com.docker.compose.secret-number": "1",
+				},
+			},
+		},
+	}
+	assertInterpolateModel(t, env, model, expected)
+}
+
 func TestModelNamedMappingsResolverWithCycledLookup(t *testing.T) {
 	var testcases = []struct {
 		model   map[string]interface{}
@@ -275,6 +429,78 @@ func TestModelNamedMappingsResolverWithCycledLookup(t *testing.T) {
 				`error while interpolating services.service_1.image: failed to interpolate model: ` +
 					`error while interpolating services.service_1.image: lookup cycle detected: image[name]`,
 			},
+		},
+		{ // Test var references itself
+			model: map[string]interface{}{
+				"services": map[string]interface{}{
+					"service_1": map[string]interface{}{
+						"environment": map[string]interface{}{
+							"TESTVAR": "{{{ ${containerEnv[TESTVAR]} }}}",
+						},
+					},
+				},
+			},
+			errMsgs: []string{
+				`error while interpolating services.service_1.environment.TESTVAR: failed to interpolate model: ` +
+					`error while interpolating services.service_1.environment.TESTVAR: lookup cycle detected: containerEnv[TESTVAR]`,
+			},
+		},
+		{ // Test var references other var that references itself
+			model: map[string]interface{}{
+				"services": map[string]interface{}{
+					"service_1": map[string]interface{}{
+						"environment": map[string]interface{}{
+							"TESTVAR":  "{{{ ${containerEnv[OTHERVAR]} }}}",
+							"OTHERVAR": "{{{ ${containerEnv[TESTVAR]} }}}",
+						},
+					},
+				},
+			},
+			errMsgs: []string{
+				`error while interpolating services.service_1.environment.TESTVAR: failed to interpolate model: ` +
+					`error while interpolating services.service_1.environment.OTHERVAR: failed to interpolate model: ` +
+					`error while interpolating services.service_1.environment.TESTVAR: lookup cycle detected: containerEnv[OTHERVAR]`,
+				`error while interpolating services.service_1.environment.OTHERVAR: failed to interpolate model: ` +
+					`error while interpolating services.service_1.environment.TESTVAR: failed to interpolate model: ` +
+					`error while interpolating services.service_1.environment.OTHERVAR: lookup cycle detected: containerEnv[TESTVAR]`,
+			},
+		},
+		{ // Test var references other var that references itself with label
+			model: map[string]interface{}{
+				"services": map[string]interface{}{
+					"service_1": map[string]interface{}{
+						"environment": map[string]interface{}{
+							"TESTVAR": "{{{ ${labels[OTHERLABEL]} }}}",
+						},
+						"labels": map[string]interface{}{
+							"OTHERLABEL": "{{{ ${containerEnv[TESTVAR]} }}}",
+						},
+					},
+				},
+			},
+			errMsgs: []string{
+				`error while interpolating services.service_1.environment.TESTVAR: failed to interpolate model: ` +
+					`error while interpolating services.service_1.labels.OTHERLABEL: failed to interpolate model: ` +
+					`error while interpolating services.service_1.environment.TESTVAR: lookup cycle detected: labels[OTHERLABEL]`,
+				`error while interpolating services.service_1.labels.OTHERLABEL: failed to interpolate model: ` +
+					`error while interpolating services.service_1.environment.TESTVAR: failed to interpolate model: ` +
+					`error while interpolating services.service_1.labels.OTHERLABEL: lookup cycle detected: containerEnv[TESTVAR]`,
+			},
+		},
+		{ // Test var (env var) references test var (label), same key should not result in error
+			model: map[string]interface{}{
+				"services": map[string]interface{}{
+					"service_1": map[string]interface{}{
+						"environment": map[string]interface{}{
+							"TESTVAR": "{{{ ${labels[TESTVAR]} }}}",
+						},
+						"labels": map[string]interface{}{
+							"TESTVAR": "test",
+						},
+					},
+				},
+			},
+			errMsgs: []string{},
 		},
 	}
 
