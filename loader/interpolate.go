@@ -115,3 +115,71 @@ func toBoolean(value string) (interface{}, error) {
 		return nil, fmt.Errorf("invalid boolean: %s", value)
 	}
 }
+
+func wrapValueWithPath(path tree.Path, value interface{}) map[string]interface{} {
+	parts := path.Parts()
+	wrapped := value
+	for i := len(parts) - 1; i >= 0; i-- {
+		wrapped = map[string]interface{}{parts[i]: wrapped}
+	}
+	return wrapped.(map[string]interface{})
+}
+
+func unwrapValueWithPath(path tree.Path, wrappedValue map[string]interface{}) interface{} {
+	var value interface{} = wrappedValue
+	for _, part := range path.Parts() {
+		value = value.(map[string]interface{})[part]
+	}
+	return value
+}
+
+func interpolateWithPath(path tree.Path, value interface{}, opts interp.Options) (interface{}, error) {
+	// Convert value to model by wrapping it with path
+	model := wrapValueWithPath(path, value)
+
+	// Interpolate model
+	interpolated, err := interp.Interpolate(model, opts)
+	if err != nil {
+		return nil, fmt.Errorf("failed to interpolate model: %w", err)
+	}
+
+	// Unwrap value and return
+	return unwrapValueWithPath(path, interpolated), nil
+}
+
+func extractValueSubset(value interface{}, subpathes ...tree.Path) map[string]interface{} {
+	source, ok := value.(map[string]interface{})
+	if !ok {
+		return nil
+	}
+	subset := map[string]interface{}{}
+	for _, subpath := range subpathes {
+		src := source
+		dst := subset
+		parts := subpath.Parts()
+		for i, part := range parts {
+			v, ok := src[part]
+			if !ok {
+				delete(subset, parts[0]) // Remove this path in final subset
+				break
+			}
+			switch next := v.(type) {
+			case map[string]interface{}:
+				dst[part] = map[string]interface{}{}
+				dst = dst[part].(map[string]interface{})
+				if i < len(parts)-1 {
+					src = next
+				} else {
+					for k, v := range next {
+						dst[k] = v
+					}
+				}
+			case []interface{}:
+				dst[part] = append([]interface{}{}, next...)
+			default:
+				dst[part] = next
+			}
+		}
+	}
+	return subset
+}
