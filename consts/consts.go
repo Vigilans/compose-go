@@ -28,6 +28,7 @@ const Extensions = "#extensions" // Using # prefix, we prevent risk to conflict 
 
 const (
 	HostEnvMapping = "env"
+	ProjectMapping = "project"
 )
 
 type ComposeFileKey struct{}
