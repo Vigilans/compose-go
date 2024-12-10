@@ -56,6 +56,26 @@ func secretMapping(name string) (string, bool) {
 	return val, ok
 }
 
+type numberNamedMappingsResolver struct{}
+
+func (numberNamedMappingsResolver) Accept(path tree.Path) bool {
+	return path.Matches(tree.NewPath("services", tree.PathMatchAll))
+}
+
+func (numberNamedMappingsResolver) Resolve(ctx context.Context, value interface{}, path tree.Path, opts Options) (template.NamedMappings, error) {
+	return template.NamedMappings{
+		"labels": func(key string) (string, bool) {
+			switch key {
+			case "com.docker.compose.container-number":
+				if parts := strings.Split(path.Last(), "_"); len(parts) == 2 { // service_1 -> service, 1
+					return parts[1], true
+				}
+			}
+			return "", false
+		},
+	}, nil
+}
+
 func TestInterpolateWithNamedMappings(t *testing.T) {
 	namedMappings := map[tree.Path]template.NamedMappings{
 		tree.NewPath(): { // global level
@@ -169,6 +189,103 @@ func TestInterpolateWithScopedNamedMappings(t *testing.T) {
 	}
 
 	result, err := Interpolate(model, Options{NamedMappings: namedMappings})
+	assert.NilError(t, err)
+	assert.Check(t, is.DeepEqual(result, expected))
+}
+
+func TestInterpolateWithEnvNamedMappingsResolver(t *testing.T) {
+	resolvers := []NamedMappingsResolver{
+		EnvNamedMappingsResolver{},
+	}
+	model := map[string]interface{}{
+		"services": map[string]interface{}{
+			"service_1": map[string]interface{}{
+				"environment": map[string]interface{}{
+					"TESTVAR": "{{{ ${env[USER]} ${FOO} }}}",
+				},
+			},
+			"service_2": map[string]interface{}{
+				"environment": map[string]interface{}{
+					"TESTVAR": "{{{ ${env[FOO]} ${USER} }}}",
+				},
+			},
+		},
+	}
+	expected := map[string]interface{}{
+		"services": map[string]interface{}{
+			"service_1": map[string]interface{}{
+				"environment": map[string]interface{}{
+					"TESTVAR": "{{{ jenny bar }}}",
+				},
+			},
+			"service_2": map[string]interface{}{
+				"environment": map[string]interface{}{
+					"TESTVAR": "{{{ bar jenny }}}",
+				},
+			},
+		},
+	}
+
+	namedMappings, err := ResolveNamedMappings(context.Background(), model, Options{LookupValue: defaultMapping}, resolvers)
+	assert.NilError(t, err)
+
+	// Check envMapping is identical with defaultMapping
+	envMapping := namedMappings[tree.NewPath()]["env"]
+	for key, value := range defaults {
+		result, ok := envMapping(key)
+		assert.Check(t, ok)
+		assert.Equal(t, value, result)
+	}
+
+	// Check interpolated result
+	result, err := Interpolate(model, Options{LookupValue: defaultMapping, NamedMappings: namedMappings})
+	assert.NilError(t, err)
+	assert.Check(t, is.DeepEqual(result, expected))
+}
+
+func TestInterpolateWithMixedNamedMappingsAndResolvers(t *testing.T) {
+	namedMappings := map[tree.Path]template.NamedMappings{
+		tree.NewPath(): { // Pre-filled named mappings
+			"secret": secretMapping,
+			"labels": labelsMapping, // Serve as fallback for non container number labels
+		},
+	}
+	resolvers := []NamedMappingsResolver{
+		EnvNamedMappingsResolver{},
+		numberNamedMappingsResolver{},
+	}
+	model := map[string]interface{}{
+		"services": map[string]interface{}{
+			"service_1": map[string]interface{}{
+				"environment": map[string]interface{}{
+					"TESTVAR": "{{{ ${env[USER]} ${secret[root_password]} ${labels[org.opencontainers.image.version]} ${labels[com.docker.compose.container-number]} }}}",
+				},
+			},
+			"service_2": map[string]interface{}{
+				"environment": map[string]interface{}{
+					"TESTVAR": "{{{ ${env[BAR]} ${secret[access_key]} ${labels[org.opencontainers.image.version]} ${labels[com.docker.compose.container-number]} }}}",
+				},
+			},
+		},
+	}
+	expected := map[string]interface{}{
+		"services": map[string]interface{}{
+			"service_1": map[string]interface{}{
+				"environment": map[string]interface{}{
+					"TESTVAR": "{{{ jenny testP@ssw0rd 22.04 1 }}}",
+				},
+			},
+			"service_2": map[string]interface{}{
+				"environment": map[string]interface{}{
+					"TESTVAR": "{{{  12345678-abcd-11ef-a236-d7497f4e9904 22.04 2 }}}",
+				},
+			},
+		},
+	}
+
+	namedMappings, err := ResolveNamedMappings(context.Background(), model, Options{LookupValue: defaultMapping, NamedMappings: namedMappings}, resolvers)
+	assert.NilError(t, err)
+	result, err := Interpolate(model, Options{LookupValue: defaultMapping, NamedMappings: namedMappings})
 	assert.NilError(t, err)
 	assert.Check(t, is.DeepEqual(result, expected))
 }
