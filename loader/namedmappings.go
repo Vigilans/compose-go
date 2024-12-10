@@ -58,7 +58,7 @@ func (r *modelNamedMappingsResolver) Accept(path tree.Path) bool {
 	}
 	parts := path.Parts()
 	if len(parts) == 2 {
-		return parts[0] == "services"
+		return parts[0] == "services" || parts[0] == "networks" || parts[0] == "volumes"
 	}
 	return false
 }
@@ -83,6 +83,14 @@ func (r *modelNamedMappingsResolver) Resolve(ctx context.Context, value interfac
 			consts.ServiceMapping:      func(key string) (string, bool) { return r.serviceMapping(scope, key) },
 			consts.ImageMapping:        func(key string) (string, bool) { return r.imageMapping(scope, key) },
 			consts.ContainerMapping:    func(key string) (string, bool) { return r.containerMapping(scope, key) },
+		}, nil
+	case path.Matches(tree.NewPath("networks", tree.PathMatchAll)):
+		return template.NamedMappings{
+			consts.NetworkMapping: func(key string) (string, bool) { return r.networkMapping(scope, key) },
+		}, nil
+	case path.Matches(tree.NewPath("volumes", tree.PathMatchAll)):
+		return template.NamedMappings{
+			consts.VolumeMapping: func(key string) (string, bool) { return r.volumeMapping(scope, key) },
 		}, nil
 	default:
 		return nil, fmt.Errorf("unsupported path for modelNamedMappingsResolver: %s", path)
@@ -151,6 +159,73 @@ func (r *modelNamedMappingsResolver) containerMapping(scope *modelNamedMappingsS
 				return utils.Must(interpolateWithPath(scope.path.Next("working_dir"), value, scope.opts)).(string), true
 			}
 			return "", false
+		})
+	}
+	return "", false
+}
+
+func (r *modelNamedMappingsResolver) networkMapping(scope *modelNamedMappingsScope, key string) (string, bool) {
+	if value, ok := r.resourceMapping(scope, consts.NetworkMapping, key); ok {
+		return value, ok
+	}
+	switch network := scope.value.(map[string]interface{}); key {
+	case "driver":
+		return scope.cachedMapping(consts.VolumeMapping, key, func() (string, bool) {
+			if value := network["driver"]; value != nil {
+				return utils.Must(interpolateWithPath(scope.path.Next("driver"), value, scope.opts)).(string), true
+			}
+			return "", false
+		})
+	}
+	return "", false
+}
+
+func (r *modelNamedMappingsResolver) volumeMapping(scope *modelNamedMappingsScope, key string) (string, bool) {
+	if value, ok := r.resourceMapping(scope, consts.VolumeMapping, key); ok {
+		return value, ok
+	}
+	switch volume := scope.value.(map[string]interface{}); key {
+	case "driver":
+		return scope.cachedMapping(consts.VolumeMapping, key, func() (string, bool) {
+			if value := volume["driver"]; value != nil {
+				return utils.Must(interpolateWithPath(scope.path.Next("driver"), value, scope.opts)).(string), true
+			}
+			return "", false
+		})
+	}
+	return "", false
+}
+
+func (r *modelNamedMappingsResolver) resourceMapping(scope *modelNamedMappingsScope, name string, key string) (string, bool) {
+	switch resource := scope.value.(map[string]interface{}); key {
+	case "name", "external":
+		return scope.cachedMapping(name, key, func() (string, bool) {
+			// Resource name requires `external` field to join resolution
+			model := wrapValueWithPath(scope.path, extractValueSubset(resource, tree.NewPath("name"), tree.NewPath("external")))
+			model["name"] = r.opts.projectName // Project name used for non-named non-external resource
+
+			// Apply Canonical to reuse `transformMaybeExternal` logic
+			model = utils.Must(transform.Canonical(model, false))
+
+			// Interpoloate model (ensure `external` field is resolved)
+			model = utils.Must(interp.Interpolate(model, scope.opts))
+
+			// Apply `setNameFromKey` logic to set default name
+			setNameFromKey(model)
+
+			// Unwrap and extract fields
+			resource = unwrapValueWithPath(scope.path, model).(map[string]interface{})
+			resourceName := resource["name"].(string)
+			external := fmt.Sprintf("%v", resource["external"] != nil && resource["external"].(bool))
+
+			// Cache values and return
+			if key == "name" {
+				scope.caches[name]["external"] = &external
+				return resourceName, true
+			} else {
+				scope.caches[name]["name"] = &resourceName
+				return external, true
+			}
 		})
 	}
 	return "", false
