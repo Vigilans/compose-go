@@ -20,6 +20,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"strconv"
 
 	"github.com/compose-spec/compose-go/v2/consts"
 	interp "github.com/compose-spec/compose-go/v2/interpolation"
@@ -76,7 +77,13 @@ func (r *modelNamedMappingsResolver) Resolve(ctx context.Context, value interfac
 	switch {
 	case path.Matches(tree.NewPath()):
 		return template.NamedMappings{
-			consts.ProjectMapping: template.ToVariadicMapping(func(keys ...string) (string, bool) { return r.projectMapping(scope, keys...) }),
+			consts.ProjectMapping:    template.ToVariadicMapping(func(keys ...string) (string, bool) { return r.projectMapping(scope, keys...) }),
+			consts.ServicesMapping:   template.ToVariadicMapping(func(keys ...string) (string, bool) { return r.crossRefMapping(scope, consts.ServiceMapping, keys...) }),
+			consts.ContainersMapping: template.ToVariadicMapping(func(keys ...string) (string, bool) { return r.crossRefMapping(scope, consts.ContainerMapping, keys...) }),
+			consts.NetworksMapping:   template.ToVariadicMapping(func(keys ...string) (string, bool) { return r.crossRefMapping(scope, consts.NetworkMapping, keys...) }),
+			consts.VolumesMapping:    template.ToVariadicMapping(func(keys ...string) (string, bool) { return r.crossRefMapping(scope, consts.VolumeMapping, keys...) }),
+			consts.ConfigsMapping:    template.ToVariadicMapping(func(keys ...string) (string, bool) { return r.crossRefMapping(scope, consts.ConfigMapping, keys...) }),
+			consts.SecretsMapping:    template.ToVariadicMapping(func(keys ...string) (string, bool) { return r.crossRefMapping(scope, consts.SecretMapping, keys...) }),
 		}, nil
 	case path.Matches(tree.NewPath("services", tree.PathMatchAll)):
 		return template.NamedMappings{
@@ -132,6 +139,15 @@ func (r *modelNamedMappingsResolver) serviceMapping(scope *modelNamedMappingsSco
 			utils.Must(config, Transform(model, config))
 			return fmt.Sprintf("%v", config.GetScale()), true
 		})
+	case "containers":
+		if len(keys) > 2 && keys[1] == "0" { // Return self as the only container, overriden by replicas logics
+			return r.containerMapping(scope, keys[2:]...)
+		}
+	}
+	if scale, ok := r.serviceMapping(scope, "scale"); ok {
+		if utils.Must(strconv.Atoi(scale)) == 1 { // If scale is 1, `service` mapping can retrieve its only container's fields
+			return r.containerMapping(scope, keys...)
+		}
 	}
 	return "", false
 }
@@ -172,6 +188,13 @@ func (r *modelNamedMappingsResolver) containerMapping(scope *modelNamedMappingsS
 			}
 			return "", false
 		})
+	case "image":
+		switch len(keys) {
+		case 1:
+			return r.imageMapping(scope, "name")
+		default:
+			return r.imageMapping(scope, keys[1:]...)
+		}
 	case "env":
 		return r.containerEnvMapping(scope, keys[1])
 	case "labels":
@@ -383,6 +406,69 @@ func (r *modelNamedMappingsResolver) labelsMapping(scope *modelNamedMappingsScop
 		// So uninterpolated values in other fields won't affect
 		return utils.Must(interpolateWithPath(scope.path.Next("labels").Next(key), *uninterpolatedLabels[key], scope.opts)).(string), true
 	})
+}
+
+func (r *modelNamedMappingsResolver) crossRefMapping(scope *modelNamedMappingsScope, elementType string, keys ...string) (string, bool) {
+	target := keys[0]
+	args := keys[1:]
+
+	var path tree.Path
+	switch elementType {
+	case consts.ServiceMapping, consts.ContainerMapping:
+		path = tree.NewPath("services")
+	case consts.NetworkMapping:
+		path = tree.NewPath("networks")
+	case consts.VolumeMapping:
+		path = tree.NewPath("volumes")
+	case consts.ConfigMapping:
+		path = tree.NewPath("configs")
+		if len(args) == 0 { // ${configs[name]} will directly return its data string
+			args = []string{"data"}
+		}
+	case consts.SecretMapping:
+		path = tree.NewPath("secrets")
+		if len(args) == 0 { // ${secrets[name]} will directly return its data string
+			args = []string{"data"}
+		}
+	}
+
+	switch elementType {
+	case consts.ServiceMapping, consts.NetworkMapping, consts.VolumeMapping, consts.ConfigMapping, consts.SecretMapping:
+		// Try to match element by key first
+		if mapping, ok := interp.LookupNamedMappings(scope.opts.NamedMappings, path.Next(target))[elementType]; ok {
+			return mapping(args...)
+		}
+
+		// If not found, unwrap to services/networks/volumes/configs/secrets and try to match element by name
+		if elements, ok := unwrapValueWithPath(path, scope.value.(map[string]interface{})).(map[string]interface{}); ok {
+			for elementKey := range elements {
+				path := path.Next(elementKey)
+				if mapping, ok := interp.LookupNamedMappings(scope.opts.NamedMappings, path)[elementType]; ok {
+					if name, ok := mapping("name"); ok && name == target {
+						return mapping(args...)
+					}
+				}
+			}
+		}
+	case consts.ContainerMapping:
+		// Enumerate all containers in all services and try to match container by name
+		if services, ok := unwrapValueWithPath(path, scope.value.(map[string]interface{})).(map[string]interface{}); ok {
+			for serviceKey := range services {
+				path := path.Next(serviceKey)
+				if mapping, ok := interp.LookupNamedMappings(scope.opts.NamedMappings, path)[consts.ServiceMapping]; ok {
+					if scale, ok := mapping("scale"); ok {
+						scale := utils.Must(strconv.Atoi(scale))
+						for i := 0; i < scale; i++ {
+							if name, ok := mapping("containers", strconv.Itoa(i), "name"); ok && name == target {
+								return mapping(append([]string{"containers", strconv.Itoa(i)}, args...)...)
+							}
+						}
+					}
+				}
+			}
+		}
+	}
+	return "", false
 }
 
 func (r *modelNamedMappingsResolver) modelToProject(model map[string]interface{}) (*types.Project, error) {

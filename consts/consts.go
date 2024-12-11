@@ -39,7 +39,13 @@ const (
 	ConfigMapping  = "config"
 	SecretMapping  = "secret"
 
-	LabelsMapping = "labels"
+	LabelsMapping     = "labels"
+	ServicesMapping   = "services"
+	ContainersMapping = "containers"
+	NetworksMapping   = "networks"
+	VolumesMapping    = "volumes"
+	ConfigsMapping    = "configs"
+	SecretsMapping    = "secrets"
 )
 
 type ComposeFileKey struct{}
