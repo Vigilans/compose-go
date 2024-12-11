@@ -991,3 +991,76 @@ func TestMergeNamedMappings(t *testing.T) {
 	assert.Check(t, is.Equal(ok, true))
 	assert.Check(t, is.Equal(result, "value"))
 }
+
+func TestVariadicMapping(t *testing.T) {
+	unaryMapping := ToVariadicMapping(func(key string) (string, bool) {
+		return key, true
+	})
+	binaryMapping := ToVariadicMapping(func(key1, key2 string) (string, bool) {
+		return key1 + "." + key2, true
+	})
+	variadicMapping := ToVariadicMapping(func(keys ...string) (string, bool) {
+		switch len(keys) {
+		case 0:
+			panic("won't reach here")
+		default:
+			return strings.Join(keys, "."), true
+		}
+	})
+	result, ok := unaryMapping("test1")
+	assert.Check(t, is.Equal(ok, true))
+	assert.Check(t, is.Equal(result, "test1"))
+	result, ok = binaryMapping("test1", "test2")
+	assert.Check(t, is.Equal(ok, true))
+	assert.Check(t, is.Equal(result, "test1.test2"))
+	_, ok = variadicMapping() // Won't panic
+	assert.Check(t, is.Equal(ok, false))
+	result, ok = variadicMapping("test1")
+	assert.Check(t, is.Equal(ok, true))
+	assert.Check(t, is.Equal(result, "test1"))
+	result, ok = variadicMapping("test1", "test2")
+	assert.Check(t, is.Equal(ok, true))
+	assert.Check(t, is.Equal(result, "test1.test2"))
+	result, ok = variadicMapping("test1", "test2", "test3")
+	assert.Check(t, is.Equal(ok, true))
+	assert.Check(t, is.Equal(result, "test1.test2.test3"))
+}
+
+func TestVariadicMappingWithNamedMappings(t *testing.T) {
+	namedMappings := NamedMappings{
+		"var": ToVariadicMapping(func(keys ...string) (string, bool) {
+			return strings.Join(keys, "."), true
+		}),
+		"empty": ToVariadicMapping(func(keys ...string) (string, bool) {
+			return "", false
+		}),
+	}
+	testcases := []struct {
+		test     string
+		expected string
+		errMsg   string
+	}{
+		{test: "{{{ ${var[a]} }}}", expected: "{{{ a }}}"},
+		{test: "{{{ ${var[a][b]} }}}", expected: "{{{ a.b }}}"},
+		{test: "{{{ ${var[a][b][c]} }}}", expected: "{{{ a.b.c }}}"},
+		{test: "{{{ ${var[a][b][c]} ${var[a][b][]} }}}", expected: "{{{ a.b.c a.b. }}}"},
+
+		{test: "{{{ ${empty[a][b]} }}}", expected: "{{{  }}}"},
+		{test: "{{{ ${empty[a][b]:-default} }}}", expected: "{{{ default }}}"},
+		{test: "{{{ ${var[a][b]:+presence} }}}", expected: "{{{ presence }}}"},
+		{test: "{{{ ${empty[a][b]?error} }}}", errMsg: `required variable empty[a][b] is missing a value: error`},
+
+		{test: "{{{ ${var[a] [b]} }}}", errMsg: `Invalid template`},
+		{test: "{{{ ${var[a] [b]:-default} }}}", errMsg: `Invalid template`},
+	}
+
+	for _, testcase := range testcases {
+		result, err := SubstituteWithOptions(testcase.test, defaultMapping, WithNamedMappings(namedMappings))
+		if testcase.errMsg != "" {
+			assert.Assert(t, err != nil, fmt.Sprintf("This should result in an error %q", testcase.errMsg))
+			assert.ErrorContains(t, err, testcase.errMsg)
+		} else {
+			assert.Check(t, is.DeepEqual(testcase.expected, result))
+		}
+	}
+}
