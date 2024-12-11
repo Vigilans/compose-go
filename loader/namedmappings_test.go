@@ -57,6 +57,7 @@ func TestModelNamedMappingsResolverWithServiceMapping(t *testing.T) {
 				"working_dir":    "${env[PWD]}",
 				"x-test-field-1": "${image[name]} ${container[name]} ${service[scale]}",
 				"x-test-field-2": "${container[user]} ${container[working-dir]}",
+				"x-test-field-3": "${container[image][name]} ${service[containers][0][image]}",
 			},
 			"service_2": map[string]interface{}{
 				"scale":        2,
@@ -77,6 +78,7 @@ func TestModelNamedMappingsResolverWithServiceMapping(t *testing.T) {
 				"working_dir":    os.Getenv("PWD"),
 				"x-test-field-1": "image:service_1 container.service_1 1",
 				"x-test-field-2": fmt.Sprintf("test-user %s", os.Getenv("PWD")),
+				"x-test-field-3": "image:service_1 image:service_1",
 			},
 			"service_2": map[string]interface{}{
 				"scale":        2,
@@ -406,6 +408,103 @@ func TestModelNamedMappingsResolverWithLabelsAndContainerEnvMapping(t *testing.T
 				"labels": map[string]interface{}{
 					"com.docker.compose.secret-number": "1",
 				},
+			},
+		},
+	}
+	assertInterpolateModel(t, env, model, expected)
+}
+
+// Tests ServicesMapping/ContainersMapping/NetworksMapping/VolumesMapping/ConfigsMapping/SecretsMapping
+func TestModelNamedMappingsResolverWithCrossScopeMapping(t *testing.T) {
+	env := map[string]string{
+		"USER": "jenny",
+		"PWD":  os.Getenv("PWD"),
+	}
+	model := map[string]interface{}{
+		"name": "test-project",
+		"services": map[string]interface{}{
+			"service_1": map[string]interface{}{
+				"image":          "test-image",
+				"container_name": "test-container",
+				"x-test-field-1": "${configs[user_from_file]} ${configs[user_from_env]} ${configs[user_from_content]}",
+				"x-test-field-2": "${secrets[user_from_config]} ${secrets[access_key]}",
+			},
+		},
+		"networks": map[string]interface{}{
+			"network_1": map[string]interface{}{
+				"name":         "test-network",
+				"driver":       "bridge",
+				"x-test-field": "${services[service_1][scale]} ${containers[test-container][image]} ${services[service_1][containers][0][image]} ${services[service_1][image]}",
+			},
+		},
+		"volumes": map[string]interface{}{
+			"volume_1": map[string]interface{}{
+				"driver":       "overlay",
+				"x-test-field": "${networks[test-network][driver]}",
+			},
+		},
+		"configs": map[string]interface{}{
+			"user_from_file": map[string]interface{}{
+				"file": "testdata/file/user.txt",
+			},
+			"user_from_env": map[string]interface{}{
+				"environment": "USER",
+			},
+			"user_from_content": map[string]interface{}{
+				"content":      "content-${configs[user_from_file]}",
+				"x-test-field": "${volumes[volume_1][driver]}",
+			},
+		},
+		"secrets": map[string]interface{}{
+			"access_key": map[string]interface{}{
+				"file": "testdata/file/access_key.txt",
+			},
+			"user_from_config": map[string]interface{}{
+				"content": "secret-${configs[user_from_content]}",
+			},
+		},
+	}
+	expected := map[string]interface{}{
+		"name": "test-project",
+		"services": map[string]interface{}{
+			"service_1": map[string]interface{}{
+				"image":          "test-image",
+				"container_name": "test-container",
+				"x-test-field-1": "test-user jenny content-test-user",
+				"x-test-field-2": "secret-content-test-user 12345678-abcd-11ef-a236-d7497f4e9904",
+			},
+		},
+		"networks": map[string]interface{}{
+			"network_1": map[string]interface{}{
+				"name":         "test-network",
+				"driver":       "bridge",
+				"x-test-field": "1 test-image test-image test-image",
+			},
+		},
+		"volumes": map[string]interface{}{
+			"volume_1": map[string]interface{}{
+				"driver":       "overlay",
+				"x-test-field": "bridge",
+			},
+		},
+		"configs": map[string]interface{}{
+			"user_from_file": map[string]interface{}{
+				"file": "testdata/file/user.txt",
+			},
+			"user_from_env": map[string]interface{}{
+				"environment": "USER",
+			},
+			"user_from_content": map[string]interface{}{
+				"content":      "content-test-user",
+				"x-test-field": "overlay",
+			},
+		},
+		"secrets": map[string]interface{}{
+			"access_key": map[string]interface{}{
+				"file": "testdata/file/access_key.txt",
+			},
+			"user_from_config": map[string]interface{}{
+				"content": "secret-content-test-user",
 			},
 		},
 	}
