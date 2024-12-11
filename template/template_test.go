@@ -531,8 +531,11 @@ func TestValueWithCurlyBracesDefault(t *testing.T) {
 	}
 }
 
-func envMapping(name string) (string, bool) {
-	return defaultMapping(name)
+func envMapping(keys ...string) (string, bool) {
+	if len(keys) == 1 {
+		return defaultMapping(keys[0])
+	}
+	return "", false
 }
 
 func TestEscapedWithNamedMappings(t *testing.T) {
@@ -562,7 +565,7 @@ func TestInvalidWithNamedMappings(t *testing.T) {
 	}
 
 	invalidMappings := NamedMappings{
-		"FOO": func(name string) (string, bool) { return "invalid]", true },
+		"FOO": func(name ...string) (string, bool) { return "invalid]", true },
 	}
 	testCases := []struct {
 		template      string
@@ -910,9 +913,9 @@ func TestSubstituteWithCustomFuncWithNamedMappings(t *testing.T) {
 }
 
 func TestPanicAsErrorInNamedMappings(t *testing.T) {
-	panicMapping := func(name string) (string, bool) {
+	panicMapping := ToVariadicMapping(func(name string) (string, bool) {
 		panic("panic")
-	}
+	})
 	_, err := SubstituteWithOptions("${env[FOO]}", defaultMapping, WithNamedMappings(NamedMappings{"env": panicMapping}))
 	assert.ErrorContains(t, err, "panic")
 }
@@ -944,13 +947,13 @@ func TestMergeMappings(t *testing.T) {
 
 func TestMergeNamedMappings(t *testing.T) {
 	namedMappings1 := NamedMappings{
-		"env": Mapping(func(key string) (string, bool) {
+		"env": ToVariadicMapping(func(key string) (string, bool) {
 			if key == "FOO" {
 				return "first", true
 			}
 			return "", false
 		}),
-		"secret": Mapping(func(key string) (string, bool) {
+		"secret": ToVariadicMapping(func(key string) (string, bool) {
 			if key == "access_key" {
 				return "access_key_value", true
 			}
@@ -958,7 +961,7 @@ func TestMergeNamedMappings(t *testing.T) {
 		}),
 	}
 	namedMappings2 := NamedMappings{
-		"env": Mapping(func(key string) (string, bool) {
+		"env": ToVariadicMapping(func(key string) (string, bool) {
 			if key == "FOO" {
 				return "first_shadowed", true
 			}
@@ -967,7 +970,7 @@ func TestMergeNamedMappings(t *testing.T) {
 			}
 			return "", false
 		}),
-		"labels": Mapping(func(key string) (string, bool) {
+		"labels": ToVariadicMapping(func(key string) (string, bool) {
 			if key == "label" {
 				return "value", true
 			}

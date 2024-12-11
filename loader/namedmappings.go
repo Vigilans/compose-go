@@ -76,43 +76,42 @@ func (r *modelNamedMappingsResolver) Resolve(ctx context.Context, value interfac
 	switch {
 	case path.Matches(tree.NewPath()):
 		return template.NamedMappings{
-			consts.ProjectMapping: func(key string) (string, bool) { return r.projectMapping(scope, key) },
+			consts.ProjectMapping: template.ToVariadicMapping(func(keys ...string) (string, bool) { return r.projectMapping(scope, keys...) }),
 		}, nil
 	case path.Matches(tree.NewPath("services", tree.PathMatchAll)):
 		return template.NamedMappings{
-			consts.ServiceMapping:      func(key string) (string, bool) { return r.serviceMapping(scope, key) },
-			consts.ImageMapping:        func(key string) (string, bool) { return r.imageMapping(scope, key) },
-			consts.ContainerMapping:    func(key string) (string, bool) { return r.containerMapping(scope, key) },
-			consts.ContainerEnvMapping: func(key string) (string, bool) { return r.containerEnvMapping(scope, key) },
-			consts.LabelsMapping:       func(key string) (string, bool) { return r.labelsMapping(scope, consts.ServiceMapping, key) },
+			consts.ServiceMapping:   template.ToVariadicMapping(func(keys ...string) (string, bool) { return r.serviceMapping(scope, keys...) }),
+			consts.ImageMapping:     template.ToVariadicMapping(func(keys ...string) (string, bool) { return r.imageMapping(scope, keys...) }),
+			consts.ContainerMapping: template.ToVariadicMapping(func(keys ...string) (string, bool) { return r.containerMapping(scope, keys...) }),
+			consts.LabelsMapping:    template.ToVariadicMapping(func(keys ...string) (string, bool) { return r.labelsMapping(scope, consts.ServiceMapping, keys[0]) }),
 		}, nil
 	case path.Matches(tree.NewPath("networks", tree.PathMatchAll)):
 		return template.NamedMappings{
-			consts.NetworkMapping: func(key string) (string, bool) { return r.networkMapping(scope, key) },
-			consts.LabelsMapping:  func(key string) (string, bool) { return r.labelsMapping(scope, consts.NetworkMapping, key) },
+			consts.NetworkMapping: template.ToVariadicMapping(func(keys ...string) (string, bool) { return r.networkMapping(scope, keys...) }),
+			consts.LabelsMapping:  template.ToVariadicMapping(func(keys ...string) (string, bool) { return r.labelsMapping(scope, consts.NetworkMapping, keys[0]) }),
 		}, nil
 	case path.Matches(tree.NewPath("volumes", tree.PathMatchAll)):
 		return template.NamedMappings{
-			consts.VolumeMapping: func(key string) (string, bool) { return r.volumeMapping(scope, key) },
-			consts.LabelsMapping: func(key string) (string, bool) { return r.labelsMapping(scope, consts.VolumeMapping, key) },
+			consts.VolumeMapping: template.ToVariadicMapping(func(keys ...string) (string, bool) { return r.volumeMapping(scope, keys...) }),
+			consts.LabelsMapping: template.ToVariadicMapping(func(keys ...string) (string, bool) { return r.labelsMapping(scope, consts.VolumeMapping, keys[0]) }),
 		}, nil
 	case path.Matches(tree.NewPath("configs", tree.PathMatchAll)):
 		return template.NamedMappings{
-			consts.ConfigMapping: func(key string) (string, bool) { return r.configMapping(scope, key) },
-			consts.LabelsMapping: func(key string) (string, bool) { return r.labelsMapping(scope, consts.ConfigMapping, key) },
+			consts.ConfigMapping: template.ToVariadicMapping(func(keys ...string) (string, bool) { return r.configMapping(scope, keys...) }),
+			consts.LabelsMapping: template.ToVariadicMapping(func(keys ...string) (string, bool) { return r.labelsMapping(scope, consts.ConfigMapping, keys[0]) }),
 		}, nil
 	case path.Matches(tree.NewPath("secrets", tree.PathMatchAll)):
 		return template.NamedMappings{
-			consts.SecretMapping: func(key string) (string, bool) { return r.secretMapping(scope, key) },
-			consts.LabelsMapping: func(key string) (string, bool) { return r.labelsMapping(scope, consts.SecretMapping, key) },
+			consts.SecretMapping: template.ToVariadicMapping(func(keys ...string) (string, bool) { return r.secretMapping(scope, keys...) }),
+			consts.LabelsMapping: template.ToVariadicMapping(func(keys ...string) (string, bool) { return r.labelsMapping(scope, consts.SecretMapping, keys[0]) }),
 		}, nil
 	default:
 		return nil, fmt.Errorf("unsupported path for modelNamedMappingsResolver: %s", path)
 	}
 }
 
-func (r *modelNamedMappingsResolver) projectMapping(_ *modelNamedMappingsScope, key string) (string, bool) {
-	switch key {
+func (r *modelNamedMappingsResolver) projectMapping(_ *modelNamedMappingsScope, keys ...string) (string, bool) {
+	switch keys[0] {
 	case "name":
 		return r.opts.projectName, true
 	case "working-dir": // TODO: working_dir or working-dir?
@@ -121,12 +120,12 @@ func (r *modelNamedMappingsResolver) projectMapping(_ *modelNamedMappingsScope, 
 	return "", false
 }
 
-func (r *modelNamedMappingsResolver) serviceMapping(scope *modelNamedMappingsScope, key string) (string, bool) {
-	switch service := scope.value.(map[string]interface{}); key {
+func (r *modelNamedMappingsResolver) serviceMapping(scope *modelNamedMappingsScope, keys ...string) (string, bool) {
+	switch service := scope.value.(map[string]interface{}); keys[0] {
 	case "name":
 		return scope.path.Last(), true
 	case "scale":
-		return scope.cachedMapping(consts.ServiceMapping, key, func() (string, bool) {
+		return scope.cachedMapping(consts.ServiceMapping, keys[0], func() (string, bool) {
 			model := extractValueSubset(service, tree.Path("scale"), tree.NewPath("deploy", "replicas"))
 			model = utils.Must(interpolateWithPath(scope.path, model, scope.opts)).(map[string]interface{})
 			config := &types.ServiceConfig{}
@@ -134,14 +133,13 @@ func (r *modelNamedMappingsResolver) serviceMapping(scope *modelNamedMappingsSco
 			return fmt.Sprintf("%v", config.GetScale()), true
 		})
 	}
-
 	return "", false
 }
 
-func (r *modelNamedMappingsResolver) imageMapping(scope *modelNamedMappingsScope, key string) (string, bool) {
-	switch service := scope.value.(map[string]interface{}); key {
+func (r *modelNamedMappingsResolver) imageMapping(scope *modelNamedMappingsScope, keys ...string) (string, bool) {
+	switch service := scope.value.(map[string]interface{}); keys[0] {
 	case "name":
-		return scope.cachedMapping(consts.ImageMapping, key, func() (string, bool) {
+		return scope.cachedMapping(consts.ImageMapping, keys[0], func() (string, bool) {
 			if value := service["image"]; value != nil {
 				return utils.Must(interpolateWithPath(scope.path.Next("image"), value, scope.opts)).(string), true
 			}
@@ -151,40 +149,44 @@ func (r *modelNamedMappingsResolver) imageMapping(scope *modelNamedMappingsScope
 	return "", false
 }
 
-func (r *modelNamedMappingsResolver) containerMapping(scope *modelNamedMappingsScope, key string) (string, bool) {
-	switch service := scope.value.(map[string]interface{}); key {
+func (r *modelNamedMappingsResolver) containerMapping(scope *modelNamedMappingsScope, keys ...string) (string, bool) {
+	switch service := scope.value.(map[string]interface{}); keys[0] {
 	case "name":
-		return scope.cachedMapping(consts.ContainerMapping, key, func() (string, bool) {
+		return scope.cachedMapping(consts.ContainerMapping, keys[0], func() (string, bool) {
 			if value := service["container_name"]; value != nil {
 				return utils.Must(interpolateWithPath(scope.path.Next("container_name"), value, scope.opts)).(string), true
 			}
 			return "", false
 		})
 	case "user":
-		return scope.cachedMapping(consts.ContainerMapping, key, func() (string, bool) {
+		return scope.cachedMapping(consts.ContainerMapping, keys[0], func() (string, bool) {
 			if value := service["user"]; value != nil {
 				return utils.Must(interpolateWithPath(scope.path.Next("user"), value, scope.opts)).(string), true
 			}
 			return "", false
 		})
 	case "working-dir": // TODO: working_dir or working-dir?
-		return scope.cachedMapping(consts.ContainerMapping, key, func() (string, bool) {
+		return scope.cachedMapping(consts.ContainerMapping, keys[0], func() (string, bool) {
 			if value := service["working_dir"]; value != nil {
 				return utils.Must(interpolateWithPath(scope.path.Next("working_dir"), value, scope.opts)).(string), true
 			}
 			return "", false
 		})
+	case "env":
+		return r.containerEnvMapping(scope, keys[1])
+	case "labels":
+		return r.labelsMapping(scope, consts.ServiceMapping, keys[1])
 	}
 	return "", false
 }
 
-func (r *modelNamedMappingsResolver) networkMapping(scope *modelNamedMappingsScope, key string) (string, bool) {
-	if value, ok := r.resourceMapping(scope, consts.NetworkMapping, key); ok {
+func (r *modelNamedMappingsResolver) networkMapping(scope *modelNamedMappingsScope, keys ...string) (string, bool) {
+	if value, ok := r.resourceMapping(scope, consts.NetworkMapping, keys...); ok {
 		return value, ok
 	}
-	switch network := scope.value.(map[string]interface{}); key {
+	switch network := scope.value.(map[string]interface{}); keys[0] {
 	case "driver":
-		return scope.cachedMapping(consts.VolumeMapping, key, func() (string, bool) {
+		return scope.cachedMapping(consts.VolumeMapping, keys[0], func() (string, bool) {
 			if value := network["driver"]; value != nil {
 				return utils.Must(interpolateWithPath(scope.path.Next("driver"), value, scope.opts)).(string), true
 			}
@@ -194,13 +196,13 @@ func (r *modelNamedMappingsResolver) networkMapping(scope *modelNamedMappingsSco
 	return "", false
 }
 
-func (r *modelNamedMappingsResolver) volumeMapping(scope *modelNamedMappingsScope, key string) (string, bool) {
-	if value, ok := r.resourceMapping(scope, consts.VolumeMapping, key); ok {
+func (r *modelNamedMappingsResolver) volumeMapping(scope *modelNamedMappingsScope, keys ...string) (string, bool) {
+	if value, ok := r.resourceMapping(scope, consts.VolumeMapping, keys...); ok {
 		return value, ok
 	}
-	switch volume := scope.value.(map[string]interface{}); key {
+	switch volume := scope.value.(map[string]interface{}); keys[0] {
 	case "driver":
-		return scope.cachedMapping(consts.VolumeMapping, key, func() (string, bool) {
+		return scope.cachedMapping(consts.VolumeMapping, keys[0], func() (string, bool) {
 			if value := volume["driver"]; value != nil {
 				return utils.Must(interpolateWithPath(scope.path.Next("driver"), value, scope.opts)).(string), true
 			}
@@ -210,24 +212,24 @@ func (r *modelNamedMappingsResolver) volumeMapping(scope *modelNamedMappingsScop
 	return "", false
 }
 
-func (r *modelNamedMappingsResolver) configMapping(scope *modelNamedMappingsScope, key string) (string, bool) {
-	if value, ok := r.resourceMapping(scope, consts.ConfigMapping, key); ok {
+func (r *modelNamedMappingsResolver) configMapping(scope *modelNamedMappingsScope, keys ...string) (string, bool) {
+	if value, ok := r.resourceMapping(scope, consts.ConfigMapping, keys...); ok {
 		return value, ok
 	}
-	return r.fileObjectMapping(scope, consts.ConfigMapping, key)
+	return r.fileObjectMapping(scope, consts.ConfigMapping, keys[0])
 }
 
-func (r *modelNamedMappingsResolver) secretMapping(scope *modelNamedMappingsScope, key string) (string, bool) {
-	if value, ok := r.resourceMapping(scope, consts.ConfigMapping, key); ok {
+func (r *modelNamedMappingsResolver) secretMapping(scope *modelNamedMappingsScope, keys ...string) (string, bool) {
+	if value, ok := r.resourceMapping(scope, consts.ConfigMapping, keys...); ok {
 		return value, ok
 	}
-	return r.fileObjectMapping(scope, consts.ConfigMapping, key)
+	return r.fileObjectMapping(scope, consts.ConfigMapping, keys[0])
 }
 
-func (r *modelNamedMappingsResolver) resourceMapping(scope *modelNamedMappingsScope, name string, key string) (string, bool) {
-	switch resource := scope.value.(map[string]interface{}); key {
+func (r *modelNamedMappingsResolver) resourceMapping(scope *modelNamedMappingsScope, name string, keys ...string) (string, bool) {
+	switch resource := scope.value.(map[string]interface{}); keys[0] {
 	case "name", "external":
-		return scope.cachedMapping(name, key, func() (string, bool) {
+		return scope.cachedMapping(name, keys[0], func() (string, bool) {
 			// Resource name requires `external` field to join resolution
 			model := wrapValueWithPath(scope.path, extractValueSubset(resource, tree.NewPath("name"), tree.NewPath("external")))
 			model["name"] = r.opts.projectName // Project name used for non-named non-external resource
@@ -247,7 +249,7 @@ func (r *modelNamedMappingsResolver) resourceMapping(scope *modelNamedMappingsSc
 			external := fmt.Sprintf("%v", resource["external"] != nil && resource["external"].(bool))
 
 			// Cache values and return
-			if key == "name" {
+			if keys[0] == "name" {
 				scope.caches[name]["external"] = &external
 				return resourceName, true
 			} else {
@@ -255,6 +257,8 @@ func (r *modelNamedMappingsResolver) resourceMapping(scope *modelNamedMappingsSc
 				return external, true
 			}
 		})
+	case "labels":
+		return r.labelsMapping(scope, name, keys[1])
 	}
 	return "", false
 }
@@ -303,7 +307,7 @@ func (r *modelNamedMappingsResolver) fileObjectMapping(scope *modelNamedMappings
 }
 
 func (r *modelNamedMappingsResolver) containerEnvMapping(scope *modelNamedMappingsScope, key string) (string, bool) {
-	return scope.cachedMapping(consts.ContainerEnvMapping, key, func() (string, bool) {
+	return scope.cachedMapping("container[env]", key, func() (string, bool) {
 		// Cache for holding all uninterpolated env variables
 		uninterpolatedEnv, ok := scope.caches["uninterpolatedEnv"]
 		if !ok {
