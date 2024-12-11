@@ -40,7 +40,7 @@ func (r EnvNamedMappingsResolver) Accept(path tree.Path) bool {
 
 func (r EnvNamedMappingsResolver) Resolve(ctx context.Context, value interface{}, path tree.Path, opts Options) (template.NamedMappings, error) {
 	return template.NamedMappings{
-		consts.HostEnvMapping: template.Mapping(opts.LookupValue),
+		consts.HostEnvMapping: template.ToVariadicMapping(template.Mapping(opts.LookupValue)),
 	}, nil
 }
 

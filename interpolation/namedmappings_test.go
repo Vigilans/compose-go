@@ -64,7 +64,7 @@ func (numberNamedMappingsResolver) Accept(path tree.Path) bool {
 
 func (numberNamedMappingsResolver) Resolve(ctx context.Context, value interface{}, path tree.Path, opts Options) (template.NamedMappings, error) {
 	return template.NamedMappings{
-		"labels": func(key string) (string, bool) {
+		"labels": template.ToVariadicMapping(func(key string) (string, bool) {
 			switch key {
 			case "com.docker.compose.container-number":
 				if parts := strings.Split(path.Last(), "_"); len(parts) == 2 { // service_1 -> service, 1
@@ -72,16 +72,16 @@ func (numberNamedMappingsResolver) Resolve(ctx context.Context, value interface{
 				}
 			}
 			return "", false
-		},
+		}),
 	}, nil
 }
 
 func TestInterpolateWithNamedMappings(t *testing.T) {
 	namedMappings := map[tree.Path]template.NamedMappings{
 		tree.NewPath(): { // global level
-			"env":    envMapping,
-			"labels": labelsMapping,
-			"secret": secretMapping,
+			"env":    template.ToVariadicMapping(envMapping),
+			"labels": template.ToVariadicMapping(labelsMapping),
+			"secret": template.ToVariadicMapping(secretMapping),
 		},
 	}
 	testcases := []struct {
@@ -139,24 +139,24 @@ func TestInterpolateWithNamedMappings(t *testing.T) {
 func TestInterpolateWithScopedNamedMappings(t *testing.T) {
 	namedMappings := map[tree.Path]template.NamedMappings{
 		tree.NewPath(): { // Global level
-			"env":    envMapping,
-			"secret": secretMapping,
+			"env":    template.ToVariadicMapping(envMapping),
+			"secret": template.ToVariadicMapping(secretMapping),
 		},
 		tree.NewPath("services", "service_1"): { // Per-service level
-			"labels": func(key string) (string, bool) {
+			"labels": template.ToVariadicMapping(func(key string) (string, bool) {
 				if key == "com.docker.compose.container-number" {
 					return "1", true
 				}
 				return labelsMapping(key)
-			},
+			}),
 		},
 		tree.NewPath("services", "service_2"): {
-			"labels": func(key string) (string, bool) {
+			"labels": template.ToVariadicMapping(func(key string) (string, bool) {
 				if key == "com.docker.compose.container-number" {
 					return "2", true
 				}
 				return labelsMapping(key)
-			},
+			}),
 		},
 	}
 	model := map[string]interface{}{
@@ -246,8 +246,8 @@ func TestInterpolateWithEnvNamedMappingsResolver(t *testing.T) {
 func TestInterpolateWithMixedNamedMappingsAndResolvers(t *testing.T) {
 	namedMappings := map[tree.Path]template.NamedMappings{
 		tree.NewPath(): { // Pre-filled named mappings
-			"secret": secretMapping,
-			"labels": labelsMapping, // Serve as fallback for non container number labels
+			"secret": template.ToVariadicMapping(secretMapping),
+			"labels": template.ToVariadicMapping(labelsMapping), // Serve as fallback for non container number labels
 		},
 	}
 	resolvers := []NamedMappingsResolver{
@@ -294,13 +294,13 @@ func TestMergeNamedMappings(t *testing.T) {
 	servicePath := tree.NewPath("services", "service_1")
 	namedMappings1 := map[tree.Path]template.NamedMappings{
 		tree.NewPath(): {
-			"env": template.Mapping(func(key string) (string, bool) {
+			"env": template.ToVariadicMapping(func(key string) (string, bool) {
 				if key == "FOO" {
 					return "first", true
 				}
 				return "", false
 			}),
-			"secret": template.Mapping(func(key string) (string, bool) {
+			"secret": template.ToVariadicMapping(func(key string) (string, bool) {
 				if key == "access_key" {
 					return "access_key_value", true
 				}
@@ -310,7 +310,7 @@ func TestMergeNamedMappings(t *testing.T) {
 	}
 	namedMappings2 := map[tree.Path]template.NamedMappings{
 		tree.NewPath(): {
-			"env": template.Mapping(func(key string) (string, bool) {
+			"env": template.ToVariadicMapping(func(key string) (string, bool) {
 				if key == "FOO" {
 					return "first_shadowed", true
 				}
@@ -321,7 +321,7 @@ func TestMergeNamedMappings(t *testing.T) {
 			}),
 		},
 		servicePath: {
-			"labels": template.Mapping(func(key string) (string, bool) {
+			"labels": template.ToVariadicMapping(func(key string) (string, bool) {
 				if key == "label" {
 					return "value", true
 				}
@@ -350,7 +350,7 @@ func TestLookupNamedMappings(t *testing.T) {
 	servicePath := tree.NewPath("services", "service_1")
 	namedMappings := map[tree.Path]template.NamedMappings{
 		tree.NewPath(): {
-			"env": template.Mapping(func(key string) (string, bool) {
+			"env": template.ToVariadicMapping(func(key string) (string, bool) {
 				if key == "FOO" {
 					return "first", true
 				}
@@ -359,7 +359,7 @@ func TestLookupNamedMappings(t *testing.T) {
 				}
 				return "", false
 			}),
-			"labels": template.Mapping(func(key string) (string, bool) {
+			"labels": template.ToVariadicMapping(func(key string) (string, bool) {
 				if key == "global-label" {
 					return "global-value", true
 				}
@@ -370,13 +370,13 @@ func TestLookupNamedMappings(t *testing.T) {
 			}),
 		},
 		servicePath: {
-			"labels": template.Mapping(func(key string) (string, bool) {
+			"labels": template.ToVariadicMapping(func(key string) (string, bool) {
 				if key == "service-label" {
 					return "service-value", true
 				}
 				return "", false
 			}),
-			"secret": template.Mapping(func(key string) (string, bool) {
+			"secret": template.ToVariadicMapping(func(key string) (string, bool) {
 				if key == "access_key" {
 					return "access_key_value", true
 				}

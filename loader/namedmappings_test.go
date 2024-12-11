@@ -268,19 +268,19 @@ func TestModelNamedMappingsResolverWithLabelsAndContainerEnvMapping(t *testing.T
 	model := map[string]interface{}{
 		"services": map[string]interface{}{
 			"service_0": map[string]interface{}{ // Nil environment and label field should not cause error
-				"container_name": "service-${containerEnv[NUMBER]:-0}${labels[com.docker.compose.container-number]}",
+				"container_name": "service-${container[env][NUMBER]:-0}${labels[com.docker.compose.container-number]}",
 			},
-			"service_1": map[string]interface{}{ // Container name number <- containerEnv
-				"container_name": "service-${containerEnv[NUMBER]}",
+			"service_1": map[string]interface{}{ // Container name number <- container[env]
+				"container_name": "service-${container[env][NUMBER]}",
 				"environment": map[string]interface{}{
-					"TESTVAR": "{{{ ${env[USER]} ${FOO} ${containerEnv[NUMBER]} ${containerEnv[NONEXIST]} }}}",
+					"TESTVAR": "{{{ ${env[USER]} ${FOO} ${container[env][NUMBER]} ${container[env][NONEXIST]} }}}",
 					"NUMBER":  "1",
 				},
 			},
-			"service_2": map[string]interface{}{ // Container name number <- containerEnv <- label
-				"container_name": "service-${containerEnv[NUMBER]}",
+			"service_2": map[string]interface{}{ // Container name number <- container[env] <- label
+				"container_name": "service-${container[env][NUMBER]}",
 				"environment": map[string]interface{}{
-					"TESTVAR": "{{{ ${env[${labels[user]}]} ${FOO} ${containerEnv[NUMBER]} ${containerEnv[NONEXIST]} }}}",
+					"TESTVAR": "{{{ ${env[${labels[user]}]} ${FOO} ${container[env][NUMBER]} ${container[env][NONEXIST]} }}}",
 					"NUMBER":  "${labels[com.docker.compose.container-number]}",
 				},
 				"labels": map[string]interface{}{
@@ -288,11 +288,11 @@ func TestModelNamedMappingsResolverWithLabelsAndContainerEnvMapping(t *testing.T
 					"user":                                "USER",
 				},
 			},
-			"service_3": map[string]interface{}{ // Container name number <- containerEnv <- label (key from env_file)
-				"container_name": "service-${containerEnv[NUMBER]}",
+			"service_3": map[string]interface{}{ // Container name number <- container[env] <- label (key from env_file)
+				"container_name": "service-${container[env][NUMBER]}",
 				"environment": map[string]interface{}{
-					"TESTVAR": "{{{ ${env[${labels[user]}]} ${FOO} ${containerEnv[NUMBER]} ${containerEnv[NONEXIST]} }}}",
-					"NUMBER":  "${labels[${containerEnv[FOO]}]}",
+					"TESTVAR": "{{{ ${env[${labels[user]}]} ${FOO} ${container[env][NUMBER]} ${container[env][NONEXIST]} }}}",
+					"NUMBER":  "${labels[${container[env][FOO]}]}",
 				},
 				"labels": map[string]interface{}{
 					"com.docker.compose.container-number": "2",
@@ -435,14 +435,14 @@ func TestModelNamedMappingsResolverWithCycledLookup(t *testing.T) {
 				"services": map[string]interface{}{
 					"service_1": map[string]interface{}{
 						"environment": map[string]interface{}{
-							"TESTVAR": "{{{ ${containerEnv[TESTVAR]} }}}",
+							"TESTVAR": "{{{ ${container[env][TESTVAR]} }}}",
 						},
 					},
 				},
 			},
 			errMsgs: []string{
 				`error while interpolating services.service_1.environment.TESTVAR: failed to interpolate model: ` +
-					`error while interpolating services.service_1.environment.TESTVAR: lookup cycle detected: containerEnv[TESTVAR]`,
+					`error while interpolating services.service_1.environment.TESTVAR: lookup cycle detected: container[env][TESTVAR]`,
 			},
 		},
 		{ // Test var references other var that references itself
@@ -450,8 +450,8 @@ func TestModelNamedMappingsResolverWithCycledLookup(t *testing.T) {
 				"services": map[string]interface{}{
 					"service_1": map[string]interface{}{
 						"environment": map[string]interface{}{
-							"TESTVAR":  "{{{ ${containerEnv[OTHERVAR]} }}}",
-							"OTHERVAR": "{{{ ${containerEnv[TESTVAR]} }}}",
+							"TESTVAR":  "{{{ ${container[env][OTHERVAR]} }}}",
+							"OTHERVAR": "{{{ ${container[env][TESTVAR]} }}}",
 						},
 					},
 				},
@@ -459,10 +459,10 @@ func TestModelNamedMappingsResolverWithCycledLookup(t *testing.T) {
 			errMsgs: []string{
 				`error while interpolating services.service_1.environment.TESTVAR: failed to interpolate model: ` +
 					`error while interpolating services.service_1.environment.OTHERVAR: failed to interpolate model: ` +
-					`error while interpolating services.service_1.environment.TESTVAR: lookup cycle detected: containerEnv[OTHERVAR]`,
+					`error while interpolating services.service_1.environment.TESTVAR: lookup cycle detected: container[env][OTHERVAR]`,
 				`error while interpolating services.service_1.environment.OTHERVAR: failed to interpolate model: ` +
 					`error while interpolating services.service_1.environment.TESTVAR: failed to interpolate model: ` +
-					`error while interpolating services.service_1.environment.OTHERVAR: lookup cycle detected: containerEnv[TESTVAR]`,
+					`error while interpolating services.service_1.environment.OTHERVAR: lookup cycle detected: container[env][TESTVAR]`,
 			},
 		},
 		{ // Test var references other var that references itself with label
@@ -473,7 +473,7 @@ func TestModelNamedMappingsResolverWithCycledLookup(t *testing.T) {
 							"TESTVAR": "{{{ ${labels[OTHERLABEL]} }}}",
 						},
 						"labels": map[string]interface{}{
-							"OTHERLABEL": "{{{ ${containerEnv[TESTVAR]} }}}",
+							"OTHERLABEL": "{{{ ${container[env][TESTVAR]} }}}",
 						},
 					},
 				},
@@ -484,7 +484,7 @@ func TestModelNamedMappingsResolverWithCycledLookup(t *testing.T) {
 					`error while interpolating services.service_1.environment.TESTVAR: lookup cycle detected: labels[OTHERLABEL]`,
 				`error while interpolating services.service_1.labels.OTHERLABEL: failed to interpolate model: ` +
 					`error while interpolating services.service_1.environment.TESTVAR: failed to interpolate model: ` +
-					`error while interpolating services.service_1.labels.OTHERLABEL: lookup cycle detected: containerEnv[TESTVAR]`,
+					`error while interpolating services.service_1.labels.OTHERLABEL: lookup cycle detected: container[env][TESTVAR]`,
 			},
 		},
 		{ // Test var (env var) references test var (label), same key should not result in error
