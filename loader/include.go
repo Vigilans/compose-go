@@ -27,13 +27,15 @@ import (
 	"github.com/compose-spec/compose-go/v2/dotenv"
 	interp "github.com/compose-spec/compose-go/v2/interpolation"
 	"github.com/compose-spec/compose-go/v2/types"
+	"github.com/compose-spec/compose-go/v2/utils"
 )
 
 // loadIncludeConfig parse the required config from raw yaml
 func loadIncludeConfig(source any) ([]types.IncludeConfig, error) {
-	if source == nil {
+	if isEmpty(source) {
 		return nil, nil
 	}
+	source = utils.UnwrapPair(source) // Use unwrapped model
 	configs, ok := source.([]any)
 	if !ok {
 		return nil, fmt.Errorf("`include` must be a list, got %s", source)
@@ -64,7 +66,6 @@ func ApplyInclude(ctx context.Context, workingDir string, environment types.Mapp
 			})
 		}
 
-		var relworkingdir string
 		for i, p := range r.Path {
 			for _, loader := range options.ResourceLoaders {
 				if !loader.Accept(p) {
@@ -77,18 +78,11 @@ func ApplyInclude(ctx context.Context, workingDir string, environment types.Mapp
 				p = path
 
 				if i == 0 { // This is the "main" file, used to define project-directory. Others are overrides
-
 					switch {
 					case r.ProjectDirectory == "":
-						relworkingdir = loader.Dir(path)
 						r.ProjectDirectory = filepath.Dir(path)
 					case !filepath.IsAbs(r.ProjectDirectory):
-						relworkingdir = loader.Dir(r.ProjectDirectory)
 						r.ProjectDirectory = filepath.Join(workingDir, r.ProjectDirectory)
-
-					default:
-						relworkingdir = r.ProjectDirectory
-
 					}
 					for _, f := range included {
 						if f == path {
@@ -102,7 +96,7 @@ func ApplyInclude(ctx context.Context, workingDir string, environment types.Mapp
 		}
 
 		loadOptions := options.clone()
-		loadOptions.ResolvePaths = true
+		loadOptions.ResolvePaths = false
 		loadOptions.SkipNormalization = true
 		loadOptions.SkipConsistencyCheck = true
 		loadOptions.ResourceLoaders = append(loadOptions.RemoteResourceLoaders(), localResourceLoader{
@@ -138,7 +132,7 @@ func ApplyInclude(ctx context.Context, workingDir string, environment types.Mapp
 		}
 
 		config := types.ConfigDetails{
-			WorkingDir:  relworkingdir,
+			WorkingDir:  r.ProjectDirectory,
 			ConfigFiles: types.ToConfigFiles(r.Path),
 			Environment: environment.Clone().Merge(envFromFile),
 		}
@@ -147,10 +141,16 @@ func ApplyInclude(ctx context.Context, workingDir string, environment types.Mapp
 			LookupValue:     config.LookupEnv,
 			TypeCastMapping: options.Interpolate.TypeCastMapping,
 		}
-		imported, err := loadYamlModel(ctx, config, loadOptions, &cycleTracker{}, included)
-		if err != nil {
-			return err
+		imported := map[string]any{}
+		cycleTracker := &cycleTracker{}
+		for _, file := range config.ConfigFiles {
+			imported, _, err = loadYamlFile(ctx, file, loadOptions, config.WorkingDir, config.Environment, cycleTracker, imported, included)
+			if err != nil {
+				return err
+			}
 		}
+		ResolveEnvironment(imported, config.Environment)
+
 		err = importResources(imported, model)
 		if err != nil {
 			return err
@@ -191,7 +191,7 @@ func importResource(source map[string]any, target map[string]any, key string) er
 		}
 		for name, a := range from.(map[string]any) {
 			if conflict, ok := to[name]; ok {
-				if reflect.DeepEqual(a, conflict) {
+				if reflect.DeepEqual(utils.UnwrapPair(a), utils.UnwrapPair(conflict)) {
 					continue
 				}
 				return fmt.Errorf("%s.%s conflicts with imported resource", key, name)
