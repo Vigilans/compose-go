@@ -20,6 +20,7 @@ import (
 	"fmt"
 
 	"github.com/compose-spec/compose-go/v2/tree"
+	"github.com/compose-spec/compose-go/v2/utils"
 	"github.com/sirupsen/logrus"
 )
 
@@ -38,7 +39,7 @@ func transformMaybeExternal(data any, p tree.Path, ignoreParseError bool) (any, 
 			resource["external"] = true
 			if extname, extNamed := external["name"]; extNamed {
 				logrus.Warnf("%s: external.name is deprecated. Please set name and external: true", p)
-				if named && extname != name {
+				if named && utils.UnwrapPair(extname) != utils.UnwrapPair(name) {
 					return nil, fmt.Errorf("%s: name and external.name conflict; only use name", p)
 				}
 				if !named {

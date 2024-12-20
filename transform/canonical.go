@@ -17,7 +17,10 @@
 package transform
 
 import (
+	"strconv"
+
 	"github.com/compose-spec/compose-go/v2/tree"
+	"github.com/compose-spec/compose-go/v2/utils"
 )
 
 type transformFunc func(data any, p tree.Path, ignoreParseError bool) (any, error)
@@ -70,11 +73,9 @@ func Canonical(yaml map[string]any, ignoreParseError bool) (map[string]any, erro
 func transform(data any, p tree.Path, ignoreParseError bool) (any, error) {
 	for pattern, transformer := range transformers {
 		if p.Matches(pattern) {
-			t, err := transformer(data, p, ignoreParseError)
-			if err != nil {
-				return nil, err
-			}
-			return t, nil
+			return utils.TransformPairWithError(data, func(data any) (any, error) {
+				return transformer(data, p, ignoreParseError)
+			})
 		}
 	}
 	switch v := data.(type) {
@@ -115,4 +116,64 @@ func transformMapping(v map[string]any, p tree.Path, ignoreParseError bool) (map
 		v[k] = t
 	}
 	return v, nil
+}
+
+func convertIntoSequence(value any, transformValue func(int, any) (any, error)) ([]any, error) {
+	var values []any
+	switch value := value.(type) {
+	case []any:
+		values = value
+	case nil:
+		values = nil
+	default:
+		values = []any{value}
+	}
+
+	for i, value := range values {
+		var err error
+		values[i], err = utils.TransformPairWithError(value, func(a any) (any, error) {
+			return transformValue(i, a)
+		})
+		if err != nil {
+			return nil, err
+		}
+	}
+	return values, nil
+}
+
+func convertIntoMapping(value any, parseKeyValue func(any) (string, any, error)) (map[string]any, error) {
+	switch value := value.(type) {
+	case []any:
+		converted := map[string]any{}
+		for _, entry := range value {
+			var key string
+			var value any
+			var err error
+			value, err = utils.TransformPairWithError(entry, func(val any) (any, error) {
+				key, val, err = parseKeyValue(val)
+				return val, err
+			})
+			if err != nil {
+				return nil, err
+			}
+			converted[key] = value
+		}
+		return converted, nil
+	case map[string]any:
+		return value, nil
+	default:
+		return nil, nil
+	}
+}
+
+func setMappingValue(mapping map[string]any, key string, value any) {
+	// Attach sibiling's context to new value if exists
+	if _, pairValues := utils.UnwrapPairWithValues[any](mapping); len(pairValues) > 0 {
+		for _, pairValue := range pairValues {
+			mapping[key] = utils.WrapPairWithValue(value, pairValue)
+			return
+		}
+	} else {
+		mapping[key] = value
+	}
 }
