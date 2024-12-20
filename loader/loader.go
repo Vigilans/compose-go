@@ -26,7 +26,6 @@ import (
 	"path/filepath"
 	"reflect"
 	"regexp"
-	"strconv"
 	"strings"
 
 	"github.com/compose-spec/compose-go/v2/consts"
@@ -772,7 +771,7 @@ func processExtensions(dict map[string]any, p tree.Path, extensions map[string]a
 		case []interface{}:
 			for i, e := range v {
 				if m, ok := e.(map[string]interface{}); ok {
-					v[i], err = processExtensions(m, p.Next(strconv.Itoa(i)), extensions)
+					v[i], err = processExtensions(m, p.NextIndex(i), extensions)
 					if err != nil {
 						return nil, err
 					}

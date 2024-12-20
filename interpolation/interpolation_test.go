@@ -196,19 +196,24 @@ func TestInterpolateWithCast(t *testing.T) {
 	config := map[string]interface{}{
 		"foo": map[string]interface{}{
 			"replicas": "$count",
+			"ports":    []interface{}{"$count", "80"},
 		},
 	}
 	toInt := func(value string) (interface{}, error) {
 		return strconv.Atoi(value)
 	}
 	result, err := Interpolate(config, Options{
-		LookupValue:     defaultMapping,
-		TypeCastMapping: map[tree.Path]Cast{tree.NewPath(tree.PathMatchAll, "replicas"): toInt},
+		LookupValue: defaultMapping,
+		TypeCastMapping: map[tree.Path]Cast{
+			tree.NewPath(tree.PathMatchAll, "replicas"):                  toInt,
+			tree.NewPath(tree.PathMatchAll, "ports", tree.PathMatchList): toInt,
+		},
 	})
 	assert.NilError(t, err)
 	expected := map[string]interface{}{
 		"foo": map[string]interface{}{
 			"replicas": 5,
+			"ports":    []interface{}{5, 80},
 		},
 	}
 	assert.Check(t, is.DeepEqual(expected, result))

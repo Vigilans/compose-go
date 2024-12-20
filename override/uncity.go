@@ -92,7 +92,7 @@ func enforceUnicity(value any, p tree.Path) (any, error) {
 				seq := []any{}
 				keys := map[string]int{}
 				for i, entry := range v {
-					key, err := indexer(utils.UnwrapPair(entry), p.Next(strconv.Itoa(i)))
+					key, err := indexer(utils.UnwrapPair(entry), p.NextIndex(i))
 					if err != nil {
 						return nil, err
 					}

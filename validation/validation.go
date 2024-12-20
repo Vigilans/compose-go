@@ -54,8 +54,8 @@ func check(value any, p tree.Path) error {
 			}
 		}
 	case []any:
-		for _, e := range v {
-			err := check(e, p.Next("[]"))
+		for i, e := range v {
+			err := check(e, p.NextIndex(i))
 			if err != nil {
 				return err
 			}

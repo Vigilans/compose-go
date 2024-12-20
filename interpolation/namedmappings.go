@@ -88,8 +88,8 @@ func recursiveResolveNamedMappings(ctx context.Context, value interface{}, path 
 			}
 		}
 	case []interface{}:
-		for _, elem := range value {
-			err := recursiveResolveNamedMappings(ctx, elem, tree.PathMatchList, opts, resolver, namedMappings)
+		for i, elem := range value {
+			err := recursiveResolveNamedMappings(ctx, elem, path.NextIndex(i), opts, resolver, namedMappings)
 			if err != nil {
 				return err
 			}
