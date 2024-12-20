@@ -20,7 +20,6 @@ import (
 	"errors"
 	"fmt"
 	"path/filepath"
-	"strconv"
 
 	"github.com/compose-spec/compose-go/v2/tree"
 	"github.com/compose-spec/compose-go/v2/types"
@@ -103,7 +102,7 @@ func (r *relativePathsResolver) resolveRelativePaths(value any, p tree.Path) (an
 		}
 	case []any:
 		for i, e := range v {
-			resolved, err := r.resolveRelativePaths(e, p.Next(strconv.Itoa(i)))
+			resolved, err := r.resolveRelativePaths(e, p.NextIndex(i))
 			if err != nil {
 				return nil, err
 			}
@@ -117,7 +116,7 @@ func (r *relativePathsResolver) absPath(value any, treePath tree.Path) (any, err
 	switch v := value.(type) {
 	case []any:
 		for i, s := range v {
-			abs, err := r.absPath(s, treePath.Next(strconv.Itoa(i)))
+			abs, err := r.absPath(s, treePath.NextIndex(i))
 			if err != nil {
 				return nil, err
 			}

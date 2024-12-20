@@ -17,8 +17,6 @@
 package utils
 
 import (
-	"strconv"
-
 	"github.com/compose-spec/compose-go/v2/tree"
 )
 
@@ -54,7 +52,7 @@ func wrapPair(value any, path tree.Path, callback func(tree.Path, any) any) any 
 	case []any:
 		list := make([]any, len(value))
 		for i, v := range value {
-			list[i] = wrapPair(v, path.Next(strconv.Itoa(i)), callback)
+			list[i] = wrapPair(v, path.NextIndex(i), callback)
 		}
 		return list
 	default:
@@ -91,7 +89,7 @@ func unwrapPair(value any, path tree.Path, callbacks ...func(tree.Path, Pair)) a
 	case []any:
 		list := make([]any, len(value))
 		for i, v := range value {
-			list[i] = unwrapPair(v, path.Next(strconv.Itoa(i)), callbacks...)
+			list[i] = unwrapPair(v, path.NextIndex(i), callbacks...)
 		}
 		return list
 	case Pair:

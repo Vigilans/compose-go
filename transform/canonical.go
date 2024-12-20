@@ -17,8 +17,6 @@
 package transform
 
 import (
-	"strconv"
-
 	"github.com/compose-spec/compose-go/v2/tree"
 	"github.com/compose-spec/compose-go/v2/utils"
 )
@@ -98,7 +96,7 @@ func transform(data any, p tree.Path, ignoreParseError bool) (any, error) {
 
 func transformSequence(v []any, p tree.Path, ignoreParseError bool) ([]any, error) {
 	for i, e := range v {
-		t, err := transform(e, p.Next("[]"), ignoreParseError)
+		t, err := transform(e, p.NextIndex(i), ignoreParseError)
 		if err != nil {
 			return nil, err
 		}

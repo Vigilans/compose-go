@@ -44,12 +44,12 @@ func omitEmpty(data any, p tree.Path) any {
 		return v
 	case []any:
 		var c []any
-		for _, e := range v {
+		for i, e := range v {
 			if isEmpty(e) && mustOmit(p) {
 				continue
 			}
 
-			c = append(c, omitEmpty(e, p.Next("[]")))
+			c = append(c, omitEmpty(e, p.NextIndex(i)))
 		}
 		return c
 	default:

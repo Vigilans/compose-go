@@ -104,7 +104,7 @@ func recursiveInterpolate(value interface{}, path tree.Path, opts Options, named
 	case []interface{}:
 		out := make([]interface{}, len(value))
 		for i, elem := range value {
-			interpolatedElem, err := recursiveInterpolate(elem, path.Next(tree.PathMatchList), opts, namedMappings)
+			interpolatedElem, err := recursiveInterpolate(elem, path.NextIndex(i), opts, namedMappings)
 			if err != nil {
 				return out, err
 			}

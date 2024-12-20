@@ -18,14 +18,13 @@ package transform
 
 import (
 	"fmt"
-	"strconv"
 
 	"github.com/compose-spec/compose-go/v2/tree"
 )
 
 func transformEnvFile(data any, p tree.Path, _ bool) (any, error) {
 	return convertIntoSequence(data, func(i int, e any) (any, error) {
-		return transformEnvFileValue(p.Next(strconv.Itoa(i)), e)
+		return transformEnvFileValue(p.NextIndex(i), e)
 	})
 }
 
