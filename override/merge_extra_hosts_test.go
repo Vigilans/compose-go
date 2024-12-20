@@ -37,11 +37,11 @@ services:
 `, `
 services:
   test:
-    image: foo
+    image: !right foo
     extra_hosts:
-      - example.com=1.2.3.4
-      - localhost=127.0.0.1
-      - example.com=4.3.2.1
+      - !left example.com=1.2.3.4
+      - !left localhost=127.0.0.1
+      - !left example.com=4.3.2.1
 `)
 }
 
@@ -61,11 +61,11 @@ services:
 `, `
 services:
   test:
-    image: foo
+    image: !right foo
     extra_hosts:
-      - example.com=1.2.3.4
-      - example.com=4.3.2.1
-      - localhost=127.0.0.1
+      - !left example.com=1.2.3.4
+      - !left example.com=4.3.2.1
+      - !left localhost=127.0.0.1
 `)
 }
 
@@ -86,10 +86,10 @@ services:
 `, `
 services:
   test:
-    image: foo
+    image: !right foo
     extra_hosts:
-      - example.com=1.2.3.4
-      - localhost=127.0.0.1
-      - example.com=4.3.2.1
+      - !left example.com=1.2.3.4
+      - !left localhost=127.0.0.1
+      - !left example.com=4.3.2.1
 `)
 }

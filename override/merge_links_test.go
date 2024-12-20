@@ -36,9 +36,9 @@ services:
 `, `
 services:
   test:
-    image: foo
+    image: !right foo
     links:
-      - service1
-      - service2=alias1
+      - !right service1
+      - !left  service2=alias1
 `)
 }

@@ -36,11 +36,11 @@ services:
 `, `
 services:
   test:
-    image: foo
+    image: !right foo
     env_file:
-      - foo.env
-      - bar.env
-      - baz.env
+      - !right foo.env
+      - !left  bar.env
+      - !left  baz.env
 `)
 }
 
@@ -57,10 +57,10 @@ services:
 `, `
 services:
   test:
-    image: foo
+    image: !right foo
     env_file:
-      - foo.env
-      - bar.env
+      - !right foo.env
+      - !left  bar.env
 `)
 }
 
@@ -84,8 +84,8 @@ services:
 services:
   test:
     env_file:
-      - foo.env
-      - bar.env
+      - !left foo.env
+      - !left bar.env
 `)
 	})
 
@@ -94,15 +94,15 @@ services:
 services:
   test:
     env_file:
-      - bar.env
-      - foo.env
+      - !right bar.env
+      - !left  foo.env
 `)
 	})
 
 	r = `
 services:
   test:
-    env_file: 
+    env_file:
       - path: foo.env
         required: true
 `
@@ -111,9 +111,9 @@ services:
 services:
   test:
     env_file:
-      - bar.env
-      - path: foo.env
-        required: true
+      - !right bar.env
+      - path: !left foo.env
+        required: !left true
 
 `)
 	})

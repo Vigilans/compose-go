@@ -40,11 +40,11 @@ services:
 `, `
 services:
   test:
-    image: foo
+    image: !right foo
     logging:
-      driver: syslog
+      driver: !left syslog
       options:
-        syslog-address: "tcp://127.0.0.1:123"
+        syslog-address: !left "tcp://127.0.0.1:123"
 `)
 }
 
@@ -68,11 +68,11 @@ services:
 `, `
 services:
   test:
-    image: foo
+    image: !right foo
     logging:
-      driver: syslog
+      driver: !left syslog
       options:
-        syslog-address: "tcp://127.0.0.1:123"
+        syslog-address: !left "tcp://127.0.0.1:123"
 `)
 }
 
@@ -94,10 +94,10 @@ services:
 `, `
 services:
   test:
-    image: foo
+    image: !right foo
     logging:
       options:
-        max-size: "10m"
-        max-file: 3
+        max-size: !right "10m"
+        max-file: !left  3
 `)
 }

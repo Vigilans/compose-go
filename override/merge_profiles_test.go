@@ -37,10 +37,10 @@ services:
 `, `
 services:
   test:
-    image: foo
+    image: !right foo
     profiles:
-      - profile1
-      - profile2
-      - profile3
+      - !right profile1
+      - !left  profile2
+      - !left  profile3
 `)
 }
