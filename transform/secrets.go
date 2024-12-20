@@ -20,6 +20,7 @@ import (
 	"fmt"
 
 	"github.com/compose-spec/compose-go/v2/tree"
+	"github.com/compose-spec/compose-go/v2/utils"
 )
 
 func transformFileMount(data any, p tree.Path, _ bool) (any, error) {
@@ -40,7 +41,7 @@ func defaultSecretMount(data any, p tree.Path, _ bool) (any, error) {
 	case map[string]any:
 		source := v["source"]
 		if _, ok := v["target"]; !ok {
-			v["target"] = fmt.Sprintf("/run/secrets/%s", source)
+			setMappingValue(v, "target", fmt.Sprintf("/run/secrets/%s", utils.UnwrapPair(source)))
 		}
 		return v, nil
 	default:

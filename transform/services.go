@@ -30,12 +30,12 @@ func transformService(data any, p tree.Path, ignoreParseError bool) (any, error)
 }
 
 func transformServiceNetworks(data any, _ tree.Path, _ bool) (any, error) {
-	if slice, ok := data.([]any); ok {
-		networks := make(map[string]any, len(slice))
-		for _, net := range slice {
-			networks[net.(string)] = nil
-		}
-		return networks, nil
+	switch value := data.(type) {
+	case []any:
+		return convertIntoMapping(value, func(net any) (string, any, error) {
+			return net.(string), nil, nil
+		})
+	default:
+		return value, nil
 	}
-	return data, nil
 }

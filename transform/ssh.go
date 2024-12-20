@@ -28,23 +28,20 @@ func transformSSH(data any, p tree.Path, _ bool) (any, error) {
 	case map[string]any:
 		return v, nil
 	case []any:
-		result := make(map[string]any, len(v))
-		for _, e := range v {
+		return convertIntoMapping(v, func(e any) (string, any, error) {
 			s, ok := e.(string)
 			if !ok {
-				return nil, fmt.Errorf("invalid ssh key type %T", e)
+				return "", nil, fmt.Errorf("invalid ssh key type %T", e)
 			}
 			id, path, ok := strings.Cut(s, "=")
 			if !ok {
 				if id != "default" {
-					return nil, fmt.Errorf("invalid ssh key %q", s)
+					return "", nil, fmt.Errorf("invalid ssh key %q", s)
 				}
-				result[id] = nil
-				continue
+				return id, nil, nil
 			}
-			result[id] = path
-		}
-		return result, nil
+			return id, path, nil
+		})
 	default:
 		return data, fmt.Errorf("%s: invalid type %T for ssh", p, v)
 	}

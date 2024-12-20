@@ -21,6 +21,7 @@ import (
 	"strings"
 
 	"github.com/compose-spec/compose-go/v2/tree"
+	"github.com/compose-spec/compose-go/v2/utils"
 )
 
 type checkerFunc func(value any, p tree.Path) error
@@ -41,7 +42,7 @@ func Validate(dict map[string]any) error {
 func check(value any, p tree.Path) error {
 	for pattern, fn := range checks {
 		if p.Matches(pattern) {
-			return fn(value, p)
+			return fn(utils.UnwrapPair(value), p)
 		}
 	}
 	switch v := value.(type) {

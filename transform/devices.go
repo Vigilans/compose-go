@@ -30,7 +30,7 @@ func deviceRequestDefaults(data any, p tree.Path, _ bool) (any, error) {
 	_, hasCount := v["count"]
 	_, hasIds := v["device_ids"]
 	if !hasCount && !hasIds {
-		v["count"] = "all"
+		setMappingValue(v, "count", "all")
 	}
 	return v, nil
 }

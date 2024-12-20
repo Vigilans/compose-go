@@ -21,6 +21,7 @@ import (
 
 	"github.com/compose-spec/compose-go/v2/tree"
 	"github.com/compose-spec/compose-go/v2/types"
+	"github.com/compose-spec/compose-go/v2/utils"
 	"github.com/go-viper/mapstructure/v2"
 )
 
@@ -33,40 +34,36 @@ func transformPorts(data any, p tree.Path, ignoreParseError bool) (any, error) {
 		var ports []any
 		for _, entry := range entries {
 			switch value := entry.(type) {
-			case int:
-				parsed, err := types.ParsePortConfig(fmt.Sprint(value))
-				if err != nil {
-					return data, err
-				}
-				for _, v := range parsed {
-					m, err := encode(v)
-					if err != nil {
-						return nil, err
+			case map[string]any:
+				ports = append(ports, value)
+			default:
+				parsedPorts, err := utils.TransformPairWithError(value, func(value any) (any, error) {
+					switch value.(type) {
+					case string, int:
+						configs, err := types.ParsePortConfig(fmt.Sprint(value))
+						if err != nil {
+							return nil, err
+						}
+						var encodedPorts []any
+						for _, port := range configs {
+							m, err := encode(port)
+							if err != nil {
+								return nil, err
+							}
+							encodedPorts = append(encodedPorts, m)
+						}
+						return encodedPorts, nil
+					default:
+						return nil, fmt.Errorf("%s: invalid type %T for port", p, value)
 					}
-					ports = append(ports, m)
-				}
-			case string:
-				parsed, err := types.ParsePortConfig(value)
+				})
 				if err != nil {
 					if ignoreParseError {
 						return data, nil
 					}
 					return nil, err
 				}
-				if err != nil {
-					return nil, err
-				}
-				for _, v := range parsed {
-					m, err := encode(v)
-					if err != nil {
-						return nil, err
-					}
-					ports = append(ports, m)
-				}
-			case map[string]any:
-				ports = append(ports, value)
-			default:
-				return data, fmt.Errorf("%s: invalid type %T for port", p, value)
+				ports = append(ports, parsedPorts.([]any)...)
 			}
 		}
 		return ports, nil
@@ -92,10 +89,10 @@ func portDefaults(data any, _ tree.Path, _ bool) (any, error) {
 	switch v := data.(type) {
 	case map[string]any:
 		if _, ok := v["protocol"]; !ok {
-			v["protocol"] = "tcp"
+			setMappingValue(v, "protocol", "tcp")
 		}
 		if _, ok := v["mode"]; !ok {
-			v["mode"] = "ingress"
+			setMappingValue(v, "mode", "ingress")
 		}
 		return v, nil
 	default:

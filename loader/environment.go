@@ -20,6 +20,7 @@ import (
 	"fmt"
 
 	"github.com/compose-spec/compose-go/v2/types"
+	"github.com/compose-spec/compose-go/v2/utils"
 )
 
 // ResolveEnvironment update the environment variables for the format {- VAR} (without interpolation)
@@ -46,16 +47,17 @@ func resolveServicesEnvironment(dict map[string]any, environment types.Mapping) 
 		}
 		envs := []any{}
 		for _, env := range serviceEnv {
-			varEnv, ok := env.(string)
-			if !ok {
-				continue
-			}
-			if found, ok := environment[varEnv]; ok {
-				envs = append(envs, fmt.Sprintf("%s=%s", varEnv, found))
-			} else {
-				// either does not exist or it was already resolved in interpolation
-				envs = append(envs, varEnv)
-			}
+			envs = append(envs, utils.TransformPair(env, func(value any) any {
+				if varEnv, ok := value.(string); ok {
+					if found, ok := environment[varEnv]; ok {
+						return fmt.Sprintf("%s=%s", varEnv, found)
+					} else {
+						// either does not exist or it was already resolved in interpolation
+						return varEnv
+					}
+				}
+				return value
+			}))
 		}
 		serviceConfig["environment"] = envs
 		services[service] = serviceConfig
