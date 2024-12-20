@@ -23,6 +23,7 @@ import (
 
 	"github.com/compose-spec/compose-go/v2/format"
 	"github.com/compose-spec/compose-go/v2/tree"
+	"github.com/compose-spec/compose-go/v2/utils"
 )
 
 type indexer func(any, tree.Path) (string, error)
@@ -38,6 +39,7 @@ func init() {
 	unique["services.*.build.additional_contexts"] = keyValueIndexer
 	unique["services.*.build.platform"] = keyValueIndexer
 	unique["services.*.build.tags"] = keyValueIndexer
+	unique["services.*.build.extra_hosts"] = extraHostsIndexer
 	unique["services.*.build.labels"] = keyValueIndexer
 	unique["services.*.cap_add"] = keyValueIndexer
 	unique["services.*.cap_drop"] = keyValueIndexer
@@ -50,6 +52,7 @@ func init() {
 	unique["services.*.environment"] = keyValueIndexer
 	unique["services.*.env_file"] = envFileIndexer
 	unique["services.*.expose"] = exposeIndexer
+	unique["services.*.extra_hosts"] = extraHostsIndexer
 	unique["services.*.labels"] = keyValueIndexer
 	unique["services.*.links"] = keyValueIndexer
 	unique["services.*.networks.*.aliases"] = keyValueIndexer
@@ -89,7 +92,7 @@ func enforceUnicity(value any, p tree.Path) (any, error) {
 				seq := []any{}
 				keys := map[string]int{}
 				for i, entry := range v {
-					key, err := indexer(entry, p.Next(fmt.Sprintf("[%d]", i)))
+					key, err := indexer(utils.UnwrapPair(entry), p.Next(strconv.Itoa(i)))
 					if err != nil {
 						return nil, err
 					}
@@ -131,7 +134,8 @@ func volumeIndexer(y any, p tree.Path) (string, error) {
 	case string:
 		volume, err := format.ParseVolume(value)
 		if err != nil {
-			return "", err
+			// Value may not be interpolated, use the string as-is for the moment
+			return value, nil
 		}
 		return volume.Target, nil
 	}
@@ -165,6 +169,10 @@ func exposeIndexer(a any, path tree.Path) (string, error) {
 	default:
 		return "", fmt.Errorf("%s: unsupported expose value %s", path, a)
 	}
+}
+
+func extraHostsIndexer(a any, path tree.Path) (string, error) {
+	return a.(string), nil
 }
 
 func mountIndexer(defaultPath string) indexer {
