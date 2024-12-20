@@ -49,3 +49,4 @@ const (
 )
 
 type ComposeFileKey struct{}
+type WorkingDirKey struct{}

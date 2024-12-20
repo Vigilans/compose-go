@@ -28,8 +28,10 @@ import (
 )
 
 func TestLoadIncludeExtendsCombined(t *testing.T) {
-	_, err := LoadWithContext(context.Background(), types.ConfigDetails{
-		WorkingDir: "testdata/combined",
+	wd, err := filepath.Abs(filepath.Join("testdata", "combined"))
+	assert.NilError(t, err)
+	p, err := LoadWithContext(context.Background(), types.ConfigDetails{
+		WorkingDir: wd,
 		ConfigFiles: []types.ConfigFile{
 			{
 				Filename: "testdata/combined/compose.yaml",
@@ -37,6 +39,7 @@ func TestLoadIncludeExtendsCombined(t *testing.T) {
 		},
 	}, withProjectName("test-load-combined", true))
 	assert.NilError(t, err)
+	assert.Equal(t, p.Services["service"].Build.Context, filepath.Join(wd, "dir"))
 }
 
 func TestLoadWithMultipleInclude(t *testing.T) {
@@ -106,7 +109,7 @@ func TestIncludeRelative(t *testing.T) {
 	assert.NilError(t, err)
 	included := p.Services["included"]
 	assert.Equal(t, included.Build.Context, ".")
-	assert.Equal(t, included.Volumes[0].Source, ".")
+	assert.Equal(t, included.Volumes[0].Source, "./")
 }
 
 func TestLoadWithIncludeEnv(t *testing.T) {
@@ -168,8 +171,10 @@ func TestIncludeWithProjectDirectory(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		envs = map[string]string{"COMPOSE_CONVERT_WINDOWS_PATHS": "1"}
 	}
+	wd, err := filepath.Abs(filepath.Join("testdata", "include"))
+	assert.NilError(t, err)
 	p, err := LoadWithContext(context.Background(), types.ConfigDetails{
-		WorkingDir:  "testdata/include",
+		WorkingDir:  wd,
 		Environment: envs,
 		ConfigFiles: []types.ConfigFile{
 			{
@@ -178,9 +183,9 @@ func TestIncludeWithProjectDirectory(t *testing.T) {
 		},
 	}, withProjectName("test-load-project-directory", true))
 	assert.NilError(t, err)
-	assert.Equal(t, filepath.ToSlash(p.Services["service"].Build.Context), "testdata/subdir")
-	assert.Equal(t, filepath.ToSlash(p.Services["service"].Volumes[0].Source), "testdata/subdir/compose-test-extends-imported.yaml")
-	assert.Equal(t, filepath.ToSlash(p.Services["service"].EnvFiles[0].Path), "testdata/subdir/extra.env")
+	assert.Equal(t, filepath.ToSlash(p.Services["service"].Build.Context), filepath.Join(wd, "../subdir"))
+	assert.Equal(t, filepath.ToSlash(p.Services["service"].Volumes[0].Source), filepath.Join(wd, "../subdir", "compose-test-extends-imported.yaml"))
+	assert.Equal(t, filepath.ToSlash(p.Services["service"].EnvFiles[0].Path), filepath.Join(wd, "../subdir", "extra.env"))
 
 }
 

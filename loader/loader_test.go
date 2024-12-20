@@ -451,7 +451,7 @@ services:
 
 	svcB, err := actual.GetService("b")
 	assert.NilError(t, err)
-	assert.Equal(t, svcB.Build.Context, tmpdir)
+	assert.Equal(t, svcB.Build.Context, bDir)
 }
 
 func TestLoadExtendsWihReset(t *testing.T) {

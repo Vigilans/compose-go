@@ -38,6 +38,7 @@ import (
 	"github.com/compose-spec/compose-go/v2/transform"
 	"github.com/compose-spec/compose-go/v2/tree"
 	"github.com/compose-spec/compose-go/v2/types"
+	"github.com/compose-spec/compose-go/v2/utils"
 	"github.com/compose-spec/compose-go/v2/validation"
 	"github.com/go-viper/mapstructure/v2"
 	"github.com/sirupsen/logrus"
@@ -440,8 +441,12 @@ func loadYamlModel(ctx context.Context, config types.ConfigDetails, opts *Option
 		}
 	}
 
+	// Unwrap dict to raw model and extract contexts attached to each field
+	dict, contexts := utils.UnwrapPairWithValues[context.Context](dict)
+
 	if opts.ResolvePaths {
-		err = paths.ResolveRelativePaths(dict, workingDir, opts.RemoteResourceFilters())
+		workingDirMapping := extractContextMapping[string](contexts, consts.WorkingDirKey{})
+		err = paths.ResolveRelativePathsWithBaseMapping(dict, workingDir, opts.RemoteResourceFilters(), workingDirMapping)
 		if err != nil {
 			return nil, err
 		}
@@ -453,6 +458,7 @@ func loadYamlModel(ctx context.Context, config types.ConfigDetails, opts *Option
 
 func loadYamlFile(ctx context.Context, file types.ConfigFile, opts *Options, workingDir string, environment types.Mapping, ct *cycleTracker, dict map[string]interface{}, included []string) (map[string]interface{}, PostProcessor, error) {
 	ctx = context.WithValue(ctx, consts.ComposeFileKey{}, file.Filename)
+	ctx = context.WithValue(ctx, consts.WorkingDirKey{}, workingDir)
 	if file.Content == nil && file.Config == nil {
 		content, err := os.ReadFile(file.Filename)
 		if err != nil {
@@ -479,6 +485,9 @@ func loadYamlFile(ctx context.Context, file types.ConfigFile, opts *Options, wor
 		}
 
 		fixEmptyNotNull(cfg)
+
+		// Embed context into each of cfg's field value
+		cfg = utils.WrapPairWithValue(cfg, ctx)
 
 		if !opts.SkipExtends {
 			err = ApplyExtends(ctx, cfg, opts, ct, processors...)
@@ -851,6 +860,16 @@ func secretConfigDecoderHook(from, to reflect.Type, data interface{}) (interface
 
 	// Return the original data so the rest is handled by default mapstructure logic
 	return data, nil
+}
+
+func extractContextMapping[T any, U any](contexts map[tree.Path]context.Context, key U) map[tree.Path]T {
+	m := map[tree.Path]T{}
+	for path, ctx := range contexts {
+		if value, ok := ctx.Value(key).(T); ok {
+			m[path] = value
+		}
+	}
+	return m
 }
 
 // keys need to be converted to strings for jsonschema
