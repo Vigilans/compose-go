@@ -20,18 +20,25 @@ import (
 	"errors"
 	"fmt"
 	"path/filepath"
+	"strconv"
 
 	"github.com/compose-spec/compose-go/v2/tree"
 	"github.com/compose-spec/compose-go/v2/types"
 )
 
-type resolver func(any) (any, error)
+type resolver func(any, tree.Path) (any, error)
 
 // ResolveRelativePaths make relative paths absolute
 func ResolveRelativePaths(project map[string]any, base string, remotes []RemoteResource) error {
+	return ResolveRelativePathsWithBaseMapping(project, base, remotes, nil)
+}
+
+// ResolveRelativePathsWithBaseMapping make relative paths absolute, where base dir can be overridden according to field path
+func ResolveRelativePathsWithBaseMapping(project map[string]any, base string, remotes []RemoteResource, baseMapping map[tree.Path]string) error {
 	r := relativePathsResolver{
-		workingDir: base,
-		remotes:    remotes,
+		workingDir:        base,
+		workingDirMapping: baseMapping,
+		remotes:           remotes,
 	}
 	r.resolvers = map[tree.Path]resolver{
 		"services.*.build.context":               r.absContextPath,
@@ -55,9 +62,10 @@ func ResolveRelativePaths(project map[string]any, base string, remotes []RemoteR
 type RemoteResource func(path string) bool
 
 type relativePathsResolver struct {
-	workingDir string
-	remotes    []RemoteResource
-	resolvers  map[tree.Path]resolver
+	workingDir        string
+	workingDirMapping map[tree.Path]string
+	remotes           []RemoteResource
+	resolvers         map[tree.Path]resolver
 }
 
 func (r *relativePathsResolver) isRemoteResource(path string) bool {
@@ -69,10 +77,19 @@ func (r *relativePathsResolver) isRemoteResource(path string) bool {
 	return false
 }
 
+func (r *relativePathsResolver) resolveWorkingDir(treePath tree.Path) (string, error) {
+	if r.workingDirMapping != nil {
+		if dir, ok := r.workingDirMapping[treePath]; ok {
+			return dir, nil
+		}
+	}
+	return r.workingDir, nil
+}
+
 func (r *relativePathsResolver) resolveRelativePaths(value any, p tree.Path) (any, error) {
 	for pattern, resolver := range r.resolvers {
 		if p.Matches(pattern) {
-			return resolver(value)
+			return resolver(value, p)
 		}
 	}
 	switch v := value.(type) {
@@ -86,7 +103,7 @@ func (r *relativePathsResolver) resolveRelativePaths(value any, p tree.Path) (an
 		}
 	case []any:
 		for i, e := range v {
-			resolved, err := r.resolveRelativePaths(e, p.Next("[]"))
+			resolved, err := r.resolveRelativePaths(e, p.Next(strconv.Itoa(i)))
 			if err != nil {
 				return nil, err
 			}
@@ -96,11 +113,11 @@ func (r *relativePathsResolver) resolveRelativePaths(value any, p tree.Path) (an
 	return value, nil
 }
 
-func (r *relativePathsResolver) absPath(value any) (any, error) {
+func (r *relativePathsResolver) absPath(value any, treePath tree.Path) (any, error) {
 	switch v := value.(type) {
 	case []any:
 		for i, s := range v {
-			abs, err := r.absPath(s)
+			abs, err := r.absPath(s, treePath.Next(strconv.Itoa(i)))
 			if err != nil {
 				return nil, err
 			}
@@ -113,7 +130,11 @@ func (r *relativePathsResolver) absPath(value any) (any, error) {
 			return v, nil
 		}
 		if v != "" {
-			return filepath.Join(r.workingDir, v), nil
+			workingDir, err := r.resolveWorkingDir(treePath)
+			if err != nil {
+				return nil, err
+			}
+			return filepath.Join(workingDir, v), nil
 		}
 		return v, nil
 	}
@@ -121,7 +142,7 @@ func (r *relativePathsResolver) absPath(value any) (any, error) {
 	return nil, fmt.Errorf("unexpected type %T", value)
 }
 
-func (r *relativePathsResolver) absVolumeMount(a any) (any, error) {
+func (r *relativePathsResolver) absVolumeMount(a any, treePath tree.Path) (any, error) {
 	switch vol := a.(type) {
 	case map[string]any:
 		if vol["type"] != types.VolumeTypeBind {
@@ -131,7 +152,7 @@ func (r *relativePathsResolver) absVolumeMount(a any) (any, error) {
 		if !ok {
 			return nil, errors.New(`invalid mount config for type "bind": field Source must not be empty`)
 		}
-		abs, err := r.maybeUnixPath(src.(string))
+		abs, err := r.maybeUnixPath(src.(string), treePath.Next("source"))
 		if err != nil {
 			return nil, err
 		}
@@ -143,7 +164,7 @@ func (r *relativePathsResolver) absVolumeMount(a any) (any, error) {
 	}
 }
 
-func (r *relativePathsResolver) volumeDriverOpts(a any) (any, error) {
+func (r *relativePathsResolver) volumeDriverOpts(a any, treePath tree.Path) (any, error) {
 	if a == nil {
 		return nil, nil
 	}
@@ -158,7 +179,7 @@ func (r *relativePathsResolver) volumeDriverOpts(a any) (any, error) {
 	opts := do.(map[string]any)
 	if dev, ok := opts["device"]; opts["o"] == "bind" && ok {
 		// This is actually a bind mount
-		path, err := r.maybeUnixPath(dev)
+		path, err := r.maybeUnixPath(dev, treePath)
 		if err != nil {
 			return nil, err
 		}
