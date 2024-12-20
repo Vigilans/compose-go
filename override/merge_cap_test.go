@@ -43,14 +43,14 @@ services:
 `, `
 services:
   test:
-    image: foo
+    image: !right foo
     cap_add:
-      - CAP_BPF
-      - CAP_CHOWN
-      - CAP_KILL
+      - !right CAP_BPF
+      - !left  CAP_CHOWN
+      - !left  CAP_KILL
     cap_drop:
-      - NET_ADMIN
-      - SYS_ADMIN
-      - CAP_FOWNER
+      - !left  NET_ADMIN
+      - !right SYS_ADMIN
+      - !left  CAP_FOWNER
 `)
 }

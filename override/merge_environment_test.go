@@ -37,12 +37,12 @@ services:
 `, `
 services:
   test:
-    image: foo
+    image: !right foo
     environment:
-      - FOO=BAR
-      - QIX=ZOT
-      - EMPTY=
-      - NIL
+      - !right FOO=BAR
+      - !left  QIX=ZOT
+      - !left  EMPTY=
+      - !left  NIL
 `)
 }
 
@@ -63,12 +63,12 @@ services:
 `, `
 services:
   test:
-    image: foo
+    image: !right foo
     environment:
-      - FOO=BAR
-      - EMPTY=
-      - NIL
-      - QIX=ZOT
+      - !right FOO=BAR
+      - !left  EMPTY=
+      - !left  NIL
+      - !left  QIX=ZOT
 `)
 }
 
@@ -87,10 +87,10 @@ services:
 `, `
 services:
   test:
-    image: foo
+    image: !right foo
     environment:
-      - FOO=BAR
-      - QIX=ZOT
+      - !right FOO=BAR
+      - !left  QIX=ZOT
 `)
 }
 
@@ -109,6 +109,6 @@ services:
 services:
   test:
     environment:
-      - FOO=3
+      - !left FOO=3
 `)
 }

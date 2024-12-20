@@ -35,7 +35,7 @@ services:
 		assertMergeYaml(t, r, l, `
 services:
   test:
-    mem_limit: 256m
+    mem_limit: !left 256m
 `)
 	})
 
@@ -43,7 +43,7 @@ services:
 		assertMergeYaml(t, l, r, `
 services:
   test:
-    mem_limit: 1
+    mem_limit: !left 1
 `)
 	})
 }

@@ -26,11 +26,11 @@ services:
   test:
     image: foo
     ulimits:
-      nofile: 
+      nofile:
           soft: 20000
           hard: 40000
       nproc: 65535
-      locks: 
+      locks:
           soft: 20000
           hard: 40000
 `, `
@@ -38,24 +38,24 @@ services:
   test:
     image: foo
     ulimits:
-      nofile: 
+      nofile:
           soft: 10000
           hard: 40000
-      nproc: 
+      nproc:
           soft: 65535
       locks:
           hard: 65535
 `, `
 services:
   test:
-    image: foo
+    image: !left foo
     ulimits:
-      nofile: 
-          soft: 10000
-          hard: 40000
-      nproc: 
-          soft: 65535
+      nofile:
+          soft: !left 10000
+          hard: !left 40000
+      nproc:
+          soft: !left 65535
       locks:
-          hard: 65535
+          hard: !left 65535
 `)
 }
