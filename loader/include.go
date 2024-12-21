@@ -155,6 +155,7 @@ func ApplyInclude(ctx context.Context, workingDir string, environment types.Mapp
 			LookupValue:     config.LookupEnv,
 			TypeCastMapping: options.Interpolate.TypeCastMapping,
 		}
+		ctx = context.WithValue(ctx, consts.ProjectDirKey{}, r.ProjectDirectory)
 		if len(envFromFile) > 0 {
 			ctx = context.WithValue(ctx, consts.LookupValueKey{}, interp.LookupValue(config.LookupEnv))
 		}
