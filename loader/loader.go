@@ -428,6 +428,28 @@ func loadYamlModel(ctx context.Context, config types.ConfigDetails, opts *Option
 		}
 	}
 
+	// Unwrap dict to raw model and extract contexts attached to each field
+	dict, contexts := utils.UnwrapPairWithValues[context.Context](dict)
+
+	if !opts.SkipValidation {
+		err := schema.Validate(dict)
+		if err, ok := err.(schema.ValidationError); ok {
+			for path, ctx := range contexts {
+				if path.HasPrefix(tree.Path(err.Field())) {
+					if file, ok := ctx.Value(consts.ComposeFileKey{}).(string); ok {
+						return nil, fmt.Errorf("validating %s: %w", file, err)
+					}
+				}
+			}
+		}
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	// Wrap dict with contexts again to make contexts participate in `Canonical` and `SetDefaultValues` transformation
+	dict = utils.WrapPairWithValues(dict, contexts)
+
 	dict, err = transform.Canonical(dict, opts.SkipInterpolation)
 	if err != nil {
 		return nil, err
@@ -454,8 +476,8 @@ func loadYamlModel(ctx context.Context, config types.ConfigDetails, opts *Option
 		}
 	}
 
-	// Unwrap dict to raw model and extract contexts attached to each field
-	dict, contexts := utils.UnwrapPairWithValues[context.Context](dict)
+	// Unwrap dict to final raw model after all structual transformations have been done
+	dict, contexts = utils.UnwrapPairWithValues[context.Context](dict)
 
 	if opts.ResolvePaths {
 		workingDirMapping := extractContextMapping[string](contexts, consts.WorkingDirKey{})
@@ -534,9 +556,6 @@ func loadYamlFile(ctx context.Context, file types.ConfigFile, opts *Options, wor
 		}
 
 		if !opts.SkipValidation {
-			if err := schema.Validate(dict); err != nil {
-				return fmt.Errorf("validating %s: %w", file.Filename, err)
-			}
 			if _, ok := dict["version"]; ok {
 				opts.warnObsoleteVersion(file.Filename)
 				delete(dict, "version")

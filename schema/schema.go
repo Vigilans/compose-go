@@ -82,7 +82,7 @@ const (
 	jsonschemaAnyOf = "number_any_of"
 )
 
-func getDescription(err validationError) string {
+func getDescription(err ValidationError) string {
 	switch err.parent.Type() {
 	case "invalid_type":
 		if expectedType, ok := err.parent.Details()["expected"].(string); ok {
@@ -118,17 +118,21 @@ func humanReadableType(definition string) string {
 	return definition
 }
 
-type validationError struct {
+type ValidationError struct {
 	parent gojsonschema.ResultError
 	child  gojsonschema.ResultError
 }
 
-func (err validationError) Error() string {
+func (err ValidationError) Error() string {
 	description := getDescription(err)
 	return fmt.Sprintf("%s %s", err.parent.Field(), description)
 }
 
-func getMostSpecificError(errors []gojsonschema.ResultError) validationError {
+func (err ValidationError) Field() string {
+	return err.parent.Field()
+}
+
+func getMostSpecificError(errors []gojsonschema.ResultError) ValidationError {
 	mostSpecificError := 0
 	for i, err := range errors {
 		if specificity(err) > specificity(errors[mostSpecificError]) {
@@ -145,17 +149,17 @@ func getMostSpecificError(errors []gojsonschema.ResultError) validationError {
 	}
 
 	if mostSpecificError+1 == len(errors) {
-		return validationError{parent: errors[mostSpecificError]}
+		return ValidationError{parent: errors[mostSpecificError]}
 	}
 
 	switch errors[mostSpecificError].Type() {
 	case "number_one_of", "number_any_of":
-		return validationError{
+		return ValidationError{
 			parent: errors[mostSpecificError],
 			child:  errors[mostSpecificError+1],
 		}
 	default:
-		return validationError{parent: errors[mostSpecificError]}
+		return ValidationError{parent: errors[mostSpecificError]}
 	}
 }
 
