@@ -77,7 +77,6 @@ func (r *modelNamedMappingsResolver) Resolve(ctx context.Context, value interfac
 	switch {
 	case path.Matches(tree.NewPath()):
 		return template.NamedMappings{
-			consts.ProjectMapping:    template.ToVariadicMapping(func(keys ...string) (string, bool) { return r.projectMapping(scope, keys...) }),
 			consts.ServicesMapping:   template.ToVariadicMapping(func(keys ...string) (string, bool) { return r.crossRefMapping(scope, consts.ServiceMapping, keys...) }),
 			consts.ContainersMapping: template.ToVariadicMapping(func(keys ...string) (string, bool) { return r.crossRefMapping(scope, consts.ContainerMapping, keys...) }),
 			consts.NetworksMapping:   template.ToVariadicMapping(func(keys ...string) (string, bool) { return r.crossRefMapping(scope, consts.NetworkMapping, keys...) }),
@@ -115,6 +114,18 @@ func (r *modelNamedMappingsResolver) Resolve(ctx context.Context, value interfac
 	default:
 		return nil, fmt.Errorf("unsupported path for modelNamedMappingsResolver: %s", path)
 	}
+}
+
+func (r *modelNamedMappingsResolver) ResolveGlobal(ctx context.Context, opts interp.Options) (template.NamedMappings, error) {
+	scope := &modelNamedMappingsScope{
+		ctx:          ctx,
+		opts:         opts,
+		caches:       map[string]map[string]*string{},
+		cycleTracker: map[string]map[string]bool{},
+	}
+	return template.NamedMappings{
+		consts.ProjectMapping: template.ToVariadicMapping(func(keys ...string) (string, bool) { return r.projectMapping(scope, keys...) }),
+	}, nil
 }
 
 func (r *modelNamedMappingsResolver) projectMapping(_ *modelNamedMappingsScope, keys ...string) (string, bool) {
