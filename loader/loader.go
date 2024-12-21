@@ -428,6 +428,19 @@ func loadYamlModel(ctx context.Context, config types.ConfigDetails, opts *Option
 		}
 	}
 
+	dict, err = transform.Canonical(dict, opts.SkipInterpolation)
+	if err != nil {
+		return nil, err
+	}
+
+	dict = OmitEmpty(dict)
+
+	// Canonical transformation can reveal duplicates, typically as ports can be a range and conflict with an override
+	dict, err = override.EnforceUnicity(dict)
+	if err != nil {
+		return nil, err
+	}
+
 	if !opts.SkipDefaultValues {
 		dict, err = transform.SetDefaultValues(dict)
 		if err != nil {
@@ -530,15 +543,6 @@ func loadYamlFile(ctx context.Context, file types.ConfigFile, opts *Options, wor
 			}
 		}
 
-		dict, err = transform.Canonical(dict, opts.SkipInterpolation)
-		if err != nil {
-			return err
-		}
-
-		dict = OmitEmpty(dict)
-
-		// Canonical transformation can reveal duplicates, typically as ports can be a range and conflict with an override
-		dict, err = override.EnforceUnicity(dict)
 		return err
 	}
 
