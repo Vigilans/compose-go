@@ -76,6 +76,10 @@ func (numberNamedMappingsResolver) Resolve(ctx context.Context, value interface{
 	}, nil
 }
 
+func (numberNamedMappingsResolver) ResolveGlobal(ctx context.Context, opts Options) (template.NamedMappings, error) {
+	return nil, nil
+}
+
 func TestInterpolateWithNamedMappings(t *testing.T) {
 	namedMappings := map[tree.Path]template.NamedMappings{
 		tree.NewPath(): { // global level
