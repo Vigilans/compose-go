@@ -116,6 +116,7 @@ func ApplyInclude(ctx context.Context, workingDir string, environment types.Mapp
 		loadOptions.ResourceLoaders = append(loadOptions.RemoteResourceLoaders(), localResourceLoader{
 			WorkingDir: r.ProjectDirectory,
 		})
+		loadOptions.SetProjectName(filepath.Base(r.ProjectDirectory), false)
 
 		if len(r.EnvFile) == 0 {
 			f := filepath.Join(r.ProjectDirectory, ".env")
@@ -155,6 +156,13 @@ func ApplyInclude(ctx context.Context, workingDir string, environment types.Mapp
 			LookupValue:     config.LookupEnv,
 			TypeCastMapping: options.Interpolate.TypeCastMapping,
 		}
+		err = projectName(&config, loadOptions)
+		if err != nil {
+			return err
+		}
+
+		ctx = context.WithValue(ctx, consts.ProjectNameKey{}, loadOptions.projectName)
+		ctx = context.WithValue(ctx, consts.ProjectDirKey{}, r.ProjectDirectory)
 		if len(envFromFile) > 0 {
 			ctx = context.WithValue(ctx, consts.LookupValueKey{}, interp.LookupValue(config.LookupEnv))
 		}

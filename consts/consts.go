@@ -29,6 +29,7 @@ const Extensions = "#extensions" // Using # prefix, we prevent risk to conflict 
 const (
 	HostEnvMapping = "env"
 	ProjectMapping = "project"
+	ComposeMapping = "compose"
 
 	ServiceMapping   = "service"
 	ImageMapping     = "image"
@@ -50,5 +51,7 @@ const (
 
 type ComposeFileKey struct{}
 type WorkingDirKey struct{}
+type ProjectDirKey struct{}
+type ProjectNameKey struct{}
 type LookupValueKey struct{}
 type NamedMappingsKey struct{}
