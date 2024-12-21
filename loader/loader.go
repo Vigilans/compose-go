@@ -70,6 +70,8 @@ type Options struct {
 	SkipDefaultValues bool
 	// Interpolation options
 	Interpolate *interp.Options
+	// NamedMappingsResolvers for retrieving named mappings based on config to interpolate
+	NamedMappingsResolvers []interp.NamedMappingsResolver
 	// Discard 'env_file' entries after resolving to 'environment' section
 	discardEnvFiles bool
 	// Set project projectName
@@ -188,6 +190,7 @@ func (o *Options) clone() *Options {
 		SkipExtends:                o.SkipExtends,
 		SkipInclude:                o.SkipInclude,
 		Interpolate:                o.Interpolate,
+		NamedMappingsResolvers:     o.NamedMappingsResolvers,
 		discardEnvFiles:            o.discardEnvFiles,
 		projectName:                o.projectName,
 		projectNameImperativelySet: o.projectNameImperativelySet,
@@ -435,6 +438,22 @@ func loadYamlModel(ctx context.Context, config types.ConfigDetails, opts *Option
 		interpOpts := *opts.Interpolate
 		interpOpts.LookupValueMapping = extractContextMapping[interp.LookupValue](contexts, consts.LookupValueKey{})
 
+		// Per-field named mappings based on its context
+		namedMappings := map[tree.Path]template.NamedMappings{}
+		for path, mappings := range extractContextMapping[map[tree.Path]template.NamedMappings](contexts, consts.NamedMappingsKey{}) {
+			namedMappings[path] = mappings[tree.NewPath()] // Narrow scope to field-level
+		}
+		interpOpts.NamedMappings = interp.MergeNamedMappings(interpOpts.NamedMappings, namedMappings)
+
+		// Resolve named mappings based on merged dict
+		if len(opts.NamedMappingsResolvers) > 0 {
+			namedMappings, err := interp.ResolveNamedMappings(ctx, dict, interpOpts, opts.NamedMappingsResolvers)
+			if err != nil {
+				return nil, err
+			}
+			interpOpts.NamedMappings = namedMappings
+		}
+
 		dict, err = interp.Interpolate(dict, interpOpts)
 		if err != nil {
 			return nil, err
@@ -523,6 +542,14 @@ func loadYamlFile(ctx context.Context, file types.ConfigFile, opts *Options, wor
 		}
 
 		fixEmptyNotNull(cfg)
+
+		if opts.Interpolate != nil && !opts.SkipInterpolation && len(opts.NamedMappingsResolvers) > 0 {
+			namedMappings, err := interp.ResolveGlobalNamedMappings(ctx, *opts.Interpolate, opts.NamedMappingsResolvers)
+			if err != nil {
+				return err
+			}
+			ctx = context.WithValue(ctx, consts.NamedMappingsKey{}, namedMappings)
+		}
 
 		// Embed context into each of cfg's field value
 		cfg = utils.WrapPairWithValue(cfg, ctx)
