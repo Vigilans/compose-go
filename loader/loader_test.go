@@ -2109,6 +2109,65 @@ func TestLoadWithExtendsWithContextUrl(t *testing.T) {
 	assert.Check(t, is.DeepEqual(expServices, actual.Services))
 }
 
+// From https://github.com/docker/compose/issues/12001, https://github.com/docker/compose/issues/11990
+func TestLoadWithExtendsWithTemplates(t *testing.T) {
+	tmpdir := t.TempDir()
+	// docker-compose.yml
+	yaml := `
+services:
+  test_service_2:
+    extends:
+      file: ./docker-compose2.yml
+      service: test_service`
+	path := createFile(t, tmpdir, yaml, "docker-compose.yml")
+
+	// docker-compose2.yml
+	yaml = `
+services:
+  test_service:
+    image: busybox
+    pull_policy: ${IMAGE_PULL_POLICY}
+    volumes:
+      - "$HOME/.Xauthority:/root/.Xauthority:ro"
+    healthcheck:
+      test: ['CMD-SHELL', "echo $$SOME_VAR"]`
+	createFile(t, tmpdir, yaml, "docker-compose2.yml")
+
+	actual, err := Load(types.ConfigDetails{
+		WorkingDir: tmpdir,
+		ConfigFiles: []types.ConfigFile{{
+			Filename: path,
+		}},
+		Environment: map[string]string{
+			"HOME":              "/home/user",
+			"IMAGE_PULL_POLICY": "always",
+		},
+	}, func(options *Options) {
+		options.SkipNormalization = true
+		options.ResolvePaths = true
+		options.SetProjectName("project", true)
+	})
+	assert.NilError(t, err)
+
+	expServices := types.Services{
+		"test_service_2": {
+			Name:        "test_service_2",
+			Image:       "busybox",
+			PullPolicy:  "always",
+			Environment: types.MappingWithEquals{},
+			Volumes: []types.ServiceVolumeConfig{{
+				Type:     "bind",
+				Source:   "/home/user/.Xauthority",
+				Target:   "/root/.Xauthority",
+				ReadOnly: true,
+				Bind:     &types.ServiceVolumeBind{CreateHostPath: true},
+			}},
+			HealthCheck: &types.HealthCheckConfig{Test: types.HealthCheckTest{"CMD-SHELL", "echo $SOME_VAR"}},
+		},
+	}
+	assert.Check(t, is.DeepEqual(expServices, actual.Services))
+}
+
 func TestServiceDeviceRequestCountIntegerType(t *testing.T) {
 	_, err := loadYAML(`
 name: service-device-request-count
