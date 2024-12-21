@@ -51,3 +51,4 @@ const (
 type ComposeFileKey struct{}
 type WorkingDirKey struct{}
 type LookupValueKey struct{}
+type NamedMappingsKey struct{}

@@ -23,6 +23,7 @@ import (
 
 	"github.com/compose-spec/compose-go/v2/consts"
 	"github.com/compose-spec/compose-go/v2/override"
+	"github.com/compose-spec/compose-go/v2/template"
 	"github.com/compose-spec/compose-go/v2/tree"
 	"github.com/compose-spec/compose-go/v2/types"
 	"github.com/compose-spec/compose-go/v2/utils"
@@ -69,6 +70,9 @@ func applyServiceExtends(ctx context.Context, name string, services map[string]a
 	var err error
 	if opts.Interpolate != nil && !opts.SkipInterpolation {
 		interpOpts := *opts.Interpolate
+		if namedMappings, ok := ctx.Value(consts.NamedMappingsKey{}).(map[tree.Path]template.NamedMappings); ok {
+			interpOpts.NamedMappings = namedMappings
+		}
 		extends, err = interpolateWithPath(tree.NewPath("services", name, "extends"), extends, interpOpts)
 		if err != nil {
 			return nil, err

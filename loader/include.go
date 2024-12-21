@@ -27,13 +27,14 @@ import (
 	"github.com/compose-spec/compose-go/v2/consts"
 	"github.com/compose-spec/compose-go/v2/dotenv"
 	interp "github.com/compose-spec/compose-go/v2/interpolation"
+	"github.com/compose-spec/compose-go/v2/template"
 	"github.com/compose-spec/compose-go/v2/tree"
 	"github.com/compose-spec/compose-go/v2/types"
 	"github.com/compose-spec/compose-go/v2/utils"
 )
 
 // loadIncludeConfig parse the required config from raw yaml
-func loadIncludeConfig(source any, options *Options) ([]types.IncludeConfig, error) {
+func loadIncludeConfig(ctx context.Context, source any, options *Options) ([]types.IncludeConfig, error) {
 	if isEmpty(source) {
 		return nil, nil
 	}
@@ -41,6 +42,9 @@ func loadIncludeConfig(source any, options *Options) ([]types.IncludeConfig, err
 	var err error
 	if options.Interpolate != nil && !options.SkipInterpolation {
 		interpOpts := *options.Interpolate
+		if namedMappings, ok := ctx.Value(consts.NamedMappingsKey{}).(map[tree.Path]template.NamedMappings); ok {
+			interpOpts.NamedMappings = namedMappings
+		}
 		source, err = interpolateWithPath(tree.NewPath("include"), source, interpOpts)
 		if err != nil {
 			return nil, err
@@ -63,7 +67,7 @@ func loadIncludeConfig(source any, options *Options) ([]types.IncludeConfig, err
 }
 
 func ApplyInclude(ctx context.Context, workingDir string, environment types.Mapping, model map[string]any, options *Options, included []string) error {
-	includeConfig, err := loadIncludeConfig(model["include"], options)
+	includeConfig, err := loadIncludeConfig(ctx, model["include"], options)
 	if err != nil {
 		return err
 	}
