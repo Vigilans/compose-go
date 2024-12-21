@@ -431,6 +431,16 @@ func loadYamlModel(ctx context.Context, config types.ConfigDetails, opts *Option
 	// Unwrap dict to raw model and extract contexts attached to each field
 	dict, contexts := utils.UnwrapPairWithValues[context.Context](dict)
 
+	if opts.Interpolate != nil && !opts.SkipInterpolation {
+		interpOpts := *opts.Interpolate
+		interpOpts.LookupValueMapping = extractContextMapping[interp.LookupValue](contexts, consts.LookupValueKey{})
+
+		dict, err = interp.Interpolate(dict, interpOpts)
+		if err != nil {
+			return nil, err
+		}
+	}
+
 	if !opts.SkipValidation {
 		err := schema.Validate(dict)
 		if err, ok := err.(schema.ValidationError); ok {
@@ -510,13 +520,6 @@ func loadYamlFile(ctx context.Context, file types.ConfigFile, opts *Options, wor
 		cfg, ok := converted.(map[string]interface{})
 		if !ok {
 			return errors.New("Top-level object must be a mapping")
-		}
-
-		if opts.Interpolate != nil && !opts.SkipInterpolation {
-			cfg, err = interp.Interpolate(cfg, *opts.Interpolate)
-			if err != nil {
-				return err
-			}
 		}
 
 		fixEmptyNotNull(cfg)

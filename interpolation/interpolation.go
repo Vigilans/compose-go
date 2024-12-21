@@ -29,6 +29,8 @@ import (
 type Options struct {
 	// LookupValue from a key
 	LookupValue LookupValue
+	// LookupValueMapping maps key paths to alternative LookupValue functions
+	LookupValueMapping map[tree.Path]LookupValue
 	// TypeCastMapping maps key paths to functions to cast to a type
 	TypeCastMapping map[tree.Path]Cast
 	// Substitution function to use
@@ -51,6 +53,9 @@ func Interpolate(config map[string]interface{}, opts Options) (map[string]interf
 	if opts.LookupValue == nil {
 		opts.LookupValue = os.LookupEnv
 	}
+	if opts.LookupValueMapping == nil {
+		opts.LookupValueMapping = make(map[tree.Path]LookupValue)
+	}
 	if opts.TypeCastMapping == nil {
 		opts.TypeCastMapping = make(map[tree.Path]Cast)
 	}
@@ -70,12 +75,16 @@ func recursiveInterpolate(value interface{}, path tree.Path, opts Options, named
 	}
 	switch value := value.(type) {
 	case string:
+		mapping := template.Mapping(opts.LookupValue)
+		if altLookupValue, ok := opts.LookupValueMapping[path]; ok {
+			mapping = template.Mapping(altLookupValue)
+		}
 		var newValue string
 		var err error
 		if namedMappings != nil {
-			newValue, err = template.SubstituteWithOptions(value, template.Mapping(opts.LookupValue), template.WithNamedMappings(namedMappings))
+			newValue, err = template.SubstituteWithOptions(value, mapping, template.WithNamedMappings(namedMappings))
 		} else {
-			newValue, err = opts.Substitute(value, template.Mapping(opts.LookupValue))
+			newValue, err = opts.Substitute(value, mapping)
 		}
 		if err != nil {
 			return value, newPathError(path, err)

@@ -24,18 +24,28 @@ import (
 	"reflect"
 	"strings"
 
+	"github.com/compose-spec/compose-go/v2/consts"
 	"github.com/compose-spec/compose-go/v2/dotenv"
 	interp "github.com/compose-spec/compose-go/v2/interpolation"
+	"github.com/compose-spec/compose-go/v2/tree"
 	"github.com/compose-spec/compose-go/v2/types"
 	"github.com/compose-spec/compose-go/v2/utils"
 )
 
 // loadIncludeConfig parse the required config from raw yaml
-func loadIncludeConfig(source any) ([]types.IncludeConfig, error) {
+func loadIncludeConfig(source any, options *Options) ([]types.IncludeConfig, error) {
 	if isEmpty(source) {
 		return nil, nil
 	}
 	source = utils.UnwrapPair(source) // Use unwrapped model
+	var err error
+	if options.Interpolate != nil && !options.SkipInterpolation {
+		interpOpts := *options.Interpolate
+		source, err = interpolateWithPath(tree.NewPath("include"), source, interpOpts)
+		if err != nil {
+			return nil, err
+		}
+	}
 	configs, ok := source.([]any)
 	if !ok {
 		return nil, fmt.Errorf("`include` must be a list, got %s", source)
@@ -48,12 +58,12 @@ func loadIncludeConfig(source any) ([]types.IncludeConfig, error) {
 		}
 	}
 	var requires []types.IncludeConfig
-	err := Transform(source, &requires)
+	err = Transform(source, &requires)
 	return requires, err
 }
 
 func ApplyInclude(ctx context.Context, workingDir string, environment types.Mapping, model map[string]any, options *Options, included []string) error {
-	includeConfig, err := loadIncludeConfig(model["include"])
+	includeConfig, err := loadIncludeConfig(model["include"], options)
 	if err != nil {
 		return err
 	}
@@ -140,6 +150,9 @@ func ApplyInclude(ctx context.Context, workingDir string, environment types.Mapp
 			Substitute:      options.Interpolate.Substitute,
 			LookupValue:     config.LookupEnv,
 			TypeCastMapping: options.Interpolate.TypeCastMapping,
+		}
+		if len(envFromFile) > 0 {
+			ctx = context.WithValue(ctx, consts.LookupValueKey{}, interp.LookupValue(config.LookupEnv))
 		}
 		imported := map[string]any{}
 		cycleTracker := &cycleTracker{}
