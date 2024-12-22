@@ -29,7 +29,7 @@ import (
 var delimiter = "\\$"
 var substitutionNamed = "[_a-z][_a-z0-9]*"
 var substitutionBraced = "[_a-z][_a-z0-9]*(?::?[-+?](.*))?"
-var substitutionMapping = "[_a-z][_a-z0-9]*\\[(.*)\\](?::?[-+?}](.*))?"
+var substitutionMapping = "[_a-z][_a-z0-9]*\\[(.*)\\](?::?[-+?\\[}](.*))?"
 
 var groupEscaped = "escaped"
 var groupNamed = "named"
@@ -90,9 +90,13 @@ func (e MissingNamedMappingError) Error() string {
 // and the absence of a value.
 type Mapping func(string) (string, bool)
 
+// VariadicMapping is a user-supplied function which maps from variable names to values.
+// Works like `Mapping`, but accepts varying number of keys as input.
+type VariadicMapping func(keys ...string) (string, bool)
+
 // NamedMappings is a collection of mappings indexed by a name key.
 // It allows temporarily switching to other mappings other than default during interpolation
-type NamedMappings map[string]Mapping
+type NamedMappings map[string]VariadicMapping
 
 // SubstituteFunc is a user-supplied function that apply substitution.
 // Returns the value as a string, a bool indicating if the function could apply
@@ -326,14 +330,18 @@ func getSubstitutionFunctionForTemplate(template string, cfg *Config) (string, S
 
 func getSubstitutionFunctionForNamedMapping(cfg *Config) SubstituteFunc {
 	return func(substitution string, mapping Mapping) (string, bool, error) {
-		namedMapping, key, rest, err := getNamedMapping(substitution, cfg)
+		namedMapping, keys, rest, err := getNamedMapping(substitution, cfg)
 		if err != nil || namedMapping == nil {
 			return "", false, err
 		}
 
-		resolvedKey, err := getResolvedNamedMappingKey(key, mapping, cfg)
-		if err != nil {
-			return "", false, err
+		resolvedKeys := []string{}
+		for _, key := range keys {
+			resolvedKey, err := getResolvedNamedMappingKey(key, mapping, cfg)
+			if err != nil {
+				return "", false, err
+			}
+			resolvedKeys = append(resolvedKeys, resolvedKey)
 		}
 
 		// If subsitution function found, delegate substitution string (with key resolved) to it
@@ -342,55 +350,71 @@ func getSubstitutionFunctionForNamedMapping(cfg *Config) SubstituteFunc {
 			if subsType == "" {
 				return "", false, &InvalidTemplateError{Template: substitution}
 			}
-			substitution := strings.Replace(substitution, key, resolvedKey, 1)
+			for i := range keys {
+				substitution = strings.Replace(substitution, keys[i], resolvedKeys[i], 1)
+			}
 			value, applied, err := subsFunc(substitution, mapping)
 			if applied || err != nil {
 				return value, applied, err
 			}
 		}
 
-		value, _ := namedMapping(resolvedKey)
+		value, _ := namedMapping(resolvedKeys...)
 		return value, true, nil
 	}
 }
 
-func getNamedMapping(substitution string, cfg *Config) (Mapping, string, string, error) {
+func getNamedMapping(substitution string, cfg *Config) (VariadicMapping, []string, string, error) {
 	if cfg.namedMappings == nil { // Named mappings not enabled
-		return nil, "", "", nil
+		return nil, nil, "", nil
 	}
 
-	openBracketIndex := -1
-	closeBracketIndex := -1
-	openBrackets := 0
+	var (
+		name string
+		keys []string
+		rest string
+	)
+	var (
+		firstBracketIndex = -1
+		openBracketIndex  = -1
+		closeBracketIndex = -1
+		openBrackets      = 0
+	)
 	for i := 0; i < len(substitution); i++ {
 		if substitution[i] == '[' {
 			if openBrackets == 0 {
 				openBracketIndex = i
+				if firstBracketIndex < 0 {
+					firstBracketIndex = i
+				}
 			}
 			openBrackets += 1
 		} else if substitution[i] == ']' {
 			openBrackets -= 1
 			if openBrackets == 0 {
 				closeBracketIndex = i
+				keys = append(keys, substitution[openBracketIndex+1:closeBracketIndex])
+				if i+1 < len(substitution) && substitution[i+1] != '[' {
+					break
+				}
 			}
-			if openBrackets <= 0 {
+			if openBrackets < 0 {
 				break
 			}
 		}
 	}
 	if openBracketIndex < 0 || closeBracketIndex < 0 {
-		return nil, "", "", nil
+		return nil, nil, "", nil
 	}
-	name := substitution[0:openBracketIndex]
-	key := substitution[openBracketIndex+1 : closeBracketIndex]
-	rest := substitution[closeBracketIndex+1:]
+	name = substitution[0:firstBracketIndex]
+	rest = substitution[closeBracketIndex+1:]
 
 	namedMapping, ok := cfg.namedMappings[name]
 	if !ok { // When namd mappings config provided, it must be able to resolve all mapping names in the template
-		return nil, "", "", &MissingNamedMappingError{Name: name}
+		return nil, nil, "", &MissingNamedMappingError{Name: name}
 	}
 
-	return namedMapping, key, rest, nil
+	return namedMapping, keys, rest, nil
 }
 
 func getResolvedNamedMappingKey(key string, mapping Mapping, cfg *Config) (string, error) {
@@ -471,7 +495,7 @@ func withDefaultWhenPresence(substitution string, mapping Mapping, cfg *Config, 
 	if err != nil {
 		return "", false, err
 	}
-	namedMapping, key, rest, err := getNamedMapping(name, cfg)
+	namedMapping, keys, rest, err := getNamedMapping(name, cfg)
 	if err != nil {
 		return "", false, err
 	}
@@ -479,7 +503,7 @@ func withDefaultWhenPresence(substitution string, mapping Mapping, cfg *Config, 
 		return "", false, &InvalidTemplateError{Template: substitution}
 	}
 	if namedMapping != nil {
-		value, ok = namedMapping(key)
+		value, ok = namedMapping(keys...)
 	} else {
 		value, ok = mapping(name)
 	}
@@ -502,7 +526,7 @@ func withDefaultWhenAbsence(substitution string, mapping Mapping, cfg *Config, e
 	if err != nil {
 		return "", false, err
 	}
-	namedMapping, key, rest, err := getNamedMapping(name, cfg)
+	namedMapping, keys, rest, err := getNamedMapping(name, cfg)
 	if err != nil {
 		return "", false, err
 	}
@@ -510,7 +534,7 @@ func withDefaultWhenAbsence(substitution string, mapping Mapping, cfg *Config, e
 		return "", false, &InvalidTemplateError{Template: substitution}
 	}
 	if namedMapping != nil {
-		value, ok = namedMapping(key)
+		value, ok = namedMapping(keys...)
 	} else {
 		value, ok = mapping(name)
 	}
@@ -529,7 +553,7 @@ func withRequired(substitution string, mapping Mapping, cfg *Config, sep string,
 	if err != nil {
 		return "", false, err
 	}
-	namedMapping, key, rest, err := getNamedMapping(name, cfg)
+	namedMapping, keys, rest, err := getNamedMapping(name, cfg)
 	if err != nil {
 		return "", false, err
 	}
@@ -537,7 +561,7 @@ func withRequired(substitution string, mapping Mapping, cfg *Config, sep string,
 		return "", false, &InvalidTemplateError{Template: substitution}
 	}
 	if namedMapping != nil {
-		value, ok = namedMapping(key)
+		value, ok = namedMapping(keys...)
 	} else {
 		value, ok = mapping(name)
 	}
@@ -582,6 +606,15 @@ func (m Mapping) Merge(other Mapping) Mapping {
 	}
 }
 
+func (m VariadicMapping) Merge(other VariadicMapping) VariadicMapping {
+	return func(keys ...string) (string, bool) {
+		if value, ok := m(keys...); ok {
+			return value, ok
+		}
+		return other(keys...)
+	}
+}
+
 func (m NamedMappings) Merge(other NamedMappings) NamedMappings {
 	if m == nil {
 		return other
@@ -603,4 +636,43 @@ func (m NamedMappings) Merge(other NamedMappings) NamedMappings {
 		}
 	}
 	return merged
+}
+
+type MappingFunctions interface {
+	Mapping | VariadicMapping |
+		func(string) (string, bool) |
+		func(string, string) (string, bool) |
+		func(...string) (string, bool)
+}
+
+func ToVariadicMapping[T MappingFunctions](mapping T) VariadicMapping {
+	switch m := any(mapping).(type) {
+	case VariadicMapping:
+		return m
+	case Mapping:
+		return ToVariadicMapping((func(string) (string, bool))(m))
+	case func(...string) (string, bool):
+		return func(keys ...string) (string, bool) {
+			if len(keys) > 0 { // Must have at least one key to work
+				return m(keys...)
+			}
+			return "", false
+		}
+	case func(string) (string, bool):
+		return func(keys ...string) (string, bool) {
+			if len(keys) == 1 {
+				return m(keys[0])
+			}
+			return "", false
+		}
+	case func(string, string) (string, bool):
+		return func(keys ...string) (string, bool) {
+			if len(keys) == 2 {
+				return m(keys[0], keys[1])
+			}
+			return "", false
+		}
+	default:
+		panic(fmt.Errorf("unexpected type %T", m))
+	}
 }

@@ -190,11 +190,7 @@ func getExtendsBaseFromFile(
 			)
 		}
 
-		var remotes []paths.RemoteResource
-		for _, loader := range opts.RemoteResourceLoaders() {
-			remotes = append(remotes, loader.Accept)
-		}
-		err = paths.ResolveRelativePaths(source, relworkingdir, remotes)
+		err = paths.ResolveRelativePaths(source, relworkingdir, opts.RemoteResourceFilters())
 		if err != nil {
 			return nil, nil, err
 		}

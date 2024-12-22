@@ -129,6 +129,14 @@ func (o Options) RemoteResourceLoaders() []ResourceLoader {
 	return loaders
 }
 
+func (o Options) RemoteResourceFilters() []paths.RemoteResource {
+	var remotes []paths.RemoteResource
+	for _, loader := range o.RemoteResourceLoaders() {
+		remotes = append(remotes, loader.Accept)
+	}
+	return remotes
+}
+
 type localResourceLoader struct {
 	WorkingDir string
 }
@@ -434,11 +442,7 @@ func loadYamlModel(ctx context.Context, config types.ConfigDetails, opts *Option
 	}
 
 	if opts.ResolvePaths {
-		var remotes []paths.RemoteResource
-		for _, loader := range opts.RemoteResourceLoaders() {
-			remotes = append(remotes, loader.Accept)
-		}
-		err = paths.ResolveRelativePaths(dict, config.WorkingDir, remotes)
+		err = paths.ResolveRelativePaths(dict, workingDir, opts.RemoteResourceFilters())
 		if err != nil {
 			return nil, err
 		}

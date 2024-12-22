@@ -26,4 +26,26 @@ const (
 
 const Extensions = "#extensions" // Using # prefix, we prevent risk to conflict with an actual yaml key
 
+const (
+	HostEnvMapping = "env"
+	ProjectMapping = "project"
+
+	ServiceMapping   = "service"
+	ImageMapping     = "image"
+	ContainerMapping = "container"
+
+	NetworkMapping = "network"
+	VolumeMapping  = "volume"
+	ConfigMapping  = "config"
+	SecretMapping  = "secret"
+
+	LabelsMapping     = "labels"
+	ServicesMapping   = "services"
+	ContainersMapping = "containers"
+	NetworksMapping   = "networks"
+	VolumesMapping    = "volumes"
+	ConfigsMapping    = "configs"
+	SecretsMapping    = "secrets"
+)
+
 type ComposeFileKey struct{}
