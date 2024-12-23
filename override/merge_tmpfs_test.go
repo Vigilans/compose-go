@@ -37,11 +37,11 @@ services:
 `, `
 services:
   test:
-    image: foo
+    image: !right foo
     tmpfs:
-      - /foo
-      - /bar
-      - /baz
+      - !left /foo
+      - !left /bar
+      - !left /baz
 `)
 }
 
@@ -58,10 +58,10 @@ services:
 `, `
 services:
   test:
-    image: foo
+    image: !right foo
     tmpfs:
-      - /foo
-      - /bar
+      - !right /foo
+      - !left  /bar
 `)
 }
 
@@ -85,10 +85,10 @@ services:
 		assertMergeYaml(t, r, l, `
 services:
   test:
-    image: foo
+    image: !right foo
     tmpfs:
-      - /foo
-      - /bar
+      - !left /foo
+      - !left /bar
 `)
 	})
 
@@ -96,10 +96,10 @@ services:
 		assertMergeYaml(t, l, r, `
 services:
   test:
-    image: foo
+    image: !left foo
     tmpfs:
-      - /bar
-      - /foo
+      - !right /bar
+      - !left  /foo
 `)
 	})
 }

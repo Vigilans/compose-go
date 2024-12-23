@@ -31,22 +31,20 @@ func transformDependsOn(data any, p tree.Path, _ bool) (any, error) {
 				return nil, fmt.Errorf("%s.%s: unsupported value %s", p, i, v)
 			}
 			if _, ok := d["condition"]; !ok {
-				d["condition"] = "service_started"
+				setMappingValue(d, "condition", "service_started")
 			}
 			if _, ok := d["required"]; !ok {
-				d["required"] = true
+				setMappingValue(d, "required", true)
 			}
 		}
 		return v, nil
 	case []any:
-		d := map[string]any{}
-		for _, k := range v {
-			d[k.(string)] = map[string]any{
+		return convertIntoMapping(v, func(k any) (string, any, error) {
+			return k.(string), map[string]any{
 				"condition": "service_started",
 				"required":  true,
-			}
-		}
-		return d, nil
+			}, nil
+		})
 	default:
 		return data, fmt.Errorf("%s: invalid type %T for depend_on", p, v)
 	}

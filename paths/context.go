@@ -16,9 +16,13 @@
 
 package paths
 
-import "strings"
+import (
+	"strings"
 
-func (r *relativePathsResolver) absContextPath(value any) (any, error) {
+	"github.com/compose-spec/compose-go/v2/tree"
+)
+
+func (r *relativePathsResolver) absContextPath(value any, treePath tree.Path) (any, error) {
 	v := value.(string)
 	if strings.Contains(v, "://") { // `docker-image://` or any builder specific context type
 		return v, nil
@@ -26,7 +30,7 @@ func (r *relativePathsResolver) absContextPath(value any) (any, error) {
 	if isRemoteContext(v) {
 		return v, nil
 	}
-	return r.absPath(v)
+	return r.absPath(v, treePath)
 }
 
 // isRemoteContext returns true if the value is a Git reference or HTTP(S) URL.

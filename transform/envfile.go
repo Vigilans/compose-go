@@ -23,33 +23,24 @@ import (
 )
 
 func transformEnvFile(data any, p tree.Path, _ bool) (any, error) {
-	switch v := data.(type) {
-	case string:
-		return []any{
-			transformEnvFileValue(v),
-		}, nil
-	case []any:
-		for i, e := range v {
-			v[i] = transformEnvFileValue(e)
-		}
-		return v, nil
-	default:
-		return nil, fmt.Errorf("%s: invalid type %T for env_file", p, v)
-	}
+	return convertIntoSequence(data, func(i int, e any) (any, error) {
+		return transformEnvFileValue(p.NextIndex(i), e)
+	})
 }
 
-func transformEnvFileValue(data any) any {
+func transformEnvFileValue(p tree.Path, data any) (any, error) {
 	switch v := data.(type) {
 	case string:
 		return map[string]any{
 			"path":     v,
 			"required": true,
-		}
+		}, nil
 	case map[string]any:
 		if _, ok := v["required"]; !ok {
-			v["required"] = true
+			setMappingValue(v, "required", true)
 		}
-		return v
+		return v, nil
+	default:
+		return nil, fmt.Errorf("%s: invalid type %T for env_file", p, v)
 	}
-	return nil
 }

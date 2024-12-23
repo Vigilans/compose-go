@@ -31,7 +31,7 @@ services:
       additional_contexts:
         - resources=/path/to/resources
         - app=docker-image://my-app:latest
-      platform: 
+      platform:
         - linux/amd64
       tags:
         - "myimage:mytag"
@@ -63,28 +63,28 @@ services:
 services:
   test:
     build:
-      context: .
+      context: !left .
       args:
-        - FOO=BAR
-        - GIT_COMMIT=cdc3b19
-        - EMPTY=
-        - NIL
+        - !right FOO=BAR
+        - !left GIT_COMMIT=cdc3b19
+        - !left EMPTY=
+        - !left NIL
       additional_contexts:
-        - resources=/path/to/resources
-        - app=docker-image://my-app:latest
-        - source=https://github.com/myuser/project.git
+        - !right resources=/path/to/resources
+        - !right app=docker-image://my-app:latest
+        - !left  source=https://github.com/myuser/project.git
       platform:
-        - "linux/amd64"
-        - "linux/arm64"
-        - "unsupported/unsupported"
+        - !left "linux/amd64"
+        - !left "linux/arm64"
+        - !left "unsupported/unsupported"
       tags:
-        - "myimage:mytag"
-        - "registry/username/myrepos:my-other-tag"
+        - !left "myimage:mytag"
+        - !left "registry/username/myrepos:my-other-tag"
       extra_hosts:
-        - "somehost=162.242.195.82"
-        - "otherhost=50.31.209.229"
-        - "otherhost=50.31.209.230"
-        - "myhostv6=::1"
+        - !right "somehost=162.242.195.82"
+        - !right "otherhost=50.31.209.229"
+        - !left  "otherhost=50.31.209.230"
+        - !left  "myhostv6=::1"
 `)
 }
 
@@ -114,16 +114,16 @@ services:
 services:
   test:
     build:
-      context: .
+      context: !left .
       args:
-       - FOO=BAR
-       - EMPTY=
-       - NIL
-       - QIX=ZOT
+       - !right FOO=BAR
+       - !left EMPTY=
+       - !left NIL
+       - !left QIX=ZOT
       additional_contexts:
-        - source=https://github.com/myuser/project.git
-        - app=docker-image://my-app:latest
-        - resources=/path/to/resources
+        - !right source=https://github.com/myuser/project.git
+        - !left  app=docker-image://my-app:latest
+        - !left  resources=/path/to/resources
 `)
 }
 
@@ -157,18 +157,18 @@ services:
 services:
   test:
     build:
-      context: .
+      context: !right .
       args:
-        - FOO=BAR
-        - QIX=ZOT
+        - !right FOO=BAR
+        - !left  QIX=ZOT
       additional_contexts:
-        - resources=/path/to/resources
-        - app=docker-image://new-app:latest
-        - source=https://github.com/myuser/project.git
-      platform: linux/amd64
+        - !right resources=/path/to/resources
+        - !left  app=docker-image://new-app:latest
+        - !left  source=https://github.com/myuser/project.git
+      platform: !right linux/amd64
       tags:
-        - "myimage:mytag"
-        - "registry/username/myrepos:my-other-tag"
+        - !right "myimage:mytag"
+        - !left  "registry/username/myrepos:my-other-tag"
 `)
 }
 
@@ -191,8 +191,8 @@ services:
 services:
   test:
     build:
-      context: .
+      context: !left .
       args:
-       - FOO=3
+       - !left FOO=3
 `)
 }

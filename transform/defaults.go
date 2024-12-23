@@ -69,7 +69,7 @@ func setDefaults(data any, p tree.Path) (any, error) {
 
 func setDefaultsSequence(v []any, p tree.Path) ([]any, error) {
 	for i, e := range v {
-		t, err := setDefaults(e, p.Next("[]"))
+		t, err := setDefaults(e, p.NextIndex(i))
 		if err != nil {
 			return nil, err
 		}

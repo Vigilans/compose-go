@@ -38,12 +38,12 @@ services:
 `, `
 services:
   test:
-    image: foo
+    image: !right foo
     volumes:
-      - a:/a
-      - type: bind
-        source: ./b
-        target: /b
-      - c:/c
+      - !right a:/a
+      - type: !right bind
+        source: !right ./b
+        target: !right /b
+      - !left c:/c
 `)
 }

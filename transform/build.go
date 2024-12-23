@@ -39,7 +39,7 @@ func defaultBuildContext(data any, _ tree.Path, _ bool) (any, error) {
 	switch v := data.(type) {
 	case map[string]any:
 		if _, ok := v["context"]; !ok {
-			v["context"] = "."
+			setMappingValue(v, "context", ".")
 		}
 		return v, nil
 	default:

@@ -16,7 +16,10 @@
 
 package loader
 
-import "github.com/compose-spec/compose-go/v2/tree"
+import (
+	"github.com/compose-spec/compose-go/v2/tree"
+	"github.com/compose-spec/compose-go/v2/utils"
+)
 
 var omitempty = []tree.Path{
 	"services.*.dns"}
@@ -41,12 +44,12 @@ func omitEmpty(data any, p tree.Path) any {
 		return v
 	case []any:
 		var c []any
-		for _, e := range v {
+		for i, e := range v {
 			if isEmpty(e) && mustOmit(p) {
 				continue
 			}
 
-			c = append(c, omitEmpty(e, p.Next("[]")))
+			c = append(c, omitEmpty(e, p.NextIndex(i)))
 		}
 		return c
 	default:
@@ -64,11 +67,14 @@ func mustOmit(p tree.Path) bool {
 }
 
 func isEmpty(e any) bool {
-	if e == nil {
+	switch e := e.(type) {
+	case utils.Pair:
+		return isEmpty(e.First)
+	case string:
+		return e == ""
+	case nil:
 		return true
+	default:
+		return false
 	}
-	if v, ok := e.(string); ok && v == "" {
-		return true
-	}
-	return false
 }

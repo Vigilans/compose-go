@@ -18,7 +18,6 @@ package loader
 
 import (
 	"fmt"
-	"strconv"
 	"strings"
 
 	"github.com/compose-spec/compose-go/v2/tree"
@@ -71,7 +70,7 @@ func (p *ResetProcessor) resolveReset(node *yaml.Node, path tree.Path) (*yaml.No
 	case yaml.SequenceNode:
 		var nodes []*yaml.Node
 		for idx, v := range node.Content {
-			next := path.Next(strconv.Itoa(idx))
+			next := path.NextIndex(idx)
 			resolved, err := p.resolveReset(v, next)
 			if err != nil {
 				return nil, err
@@ -128,7 +127,7 @@ func (p *ResetProcessor) applyNullOverrides(target any, path tree.Path) error {
 	case []any:
 	ITER:
 		for i, e := range v {
-			next := path.Next(fmt.Sprintf("[%d]", i))
+			next := path.NextIndex(i)
 			for _, pattern := range p.paths {
 				if next.Matches(pattern) {
 					continue ITER

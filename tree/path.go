@@ -17,6 +17,7 @@
 package tree
 
 import (
+	"strconv"
 	"strings"
 )
 
@@ -47,6 +48,10 @@ func (p Path) Next(part string) Path {
 	return Path(string(p) + pathSeparator + part)
 }
 
+func (p Path) NextIndex(index int) Path {
+	return p.Next(strconv.Itoa(index))
+}
+
 func (p Path) Parts() []string {
 	return strings.Split(string(p), pathSeparator)
 }
@@ -62,6 +67,34 @@ func (p Path) Matches(pattern Path) bool {
 		switch patternParts[index] {
 		case PathMatchAll, part:
 			continue
+		case PathMatchList:
+			_, err := strconv.Atoi(strings.TrimSuffix(strings.TrimPrefix(part, "["), "]"))
+			if err != nil {
+				return false
+			}
+		default:
+			return false
+		}
+	}
+	return true
+}
+
+func (p Path) HasPrefix(pattern Path) bool {
+	patternParts := pattern.Parts()
+	parts := p.Parts()
+
+	if len(patternParts) > len(parts) {
+		return false
+	}
+	for index, part := range patternParts {
+		switch patternParts[index] {
+		case PathMatchAll, part:
+			continue
+		case PathMatchList:
+			_, err := strconv.Atoi(strings.TrimSuffix(strings.TrimPrefix(part, "["), "]"))
+			if err != nil {
+				return false
+			}
 		default:
 			return false
 		}

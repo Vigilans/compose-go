@@ -26,7 +26,6 @@ import (
 	"path/filepath"
 	"reflect"
 	"regexp"
-	"strconv"
 	"strings"
 
 	"github.com/compose-spec/compose-go/v2/consts"
@@ -39,6 +38,7 @@ import (
 	"github.com/compose-spec/compose-go/v2/transform"
 	"github.com/compose-spec/compose-go/v2/tree"
 	"github.com/compose-spec/compose-go/v2/types"
+	"github.com/compose-spec/compose-go/v2/utils"
 	"github.com/compose-spec/compose-go/v2/validation"
 	"github.com/go-viper/mapstructure/v2"
 	"github.com/sirupsen/logrus"
@@ -70,6 +70,8 @@ type Options struct {
 	SkipDefaultValues bool
 	// Interpolation options
 	Interpolate *interp.Options
+	// NamedMappingsResolvers for retrieving named mappings based on config to interpolate
+	NamedMappingsResolvers []interp.NamedMappingsResolver
 	// Discard 'env_file' entries after resolving to 'environment' section
 	discardEnvFiles bool
 	// Set project projectName
@@ -188,6 +190,7 @@ func (o *Options) clone() *Options {
 		SkipExtends:                o.SkipExtends,
 		SkipInclude:                o.SkipInclude,
 		Interpolate:                o.Interpolate,
+		NamedMappingsResolvers:     o.NamedMappingsResolvers,
 		discardEnvFiles:            o.discardEnvFiles,
 		projectName:                o.projectName,
 		projectNameImperativelySet: o.projectNameImperativelySet,
@@ -428,6 +431,67 @@ func loadYamlModel(ctx context.Context, config types.ConfigDetails, opts *Option
 		}
 	}
 
+	// Unwrap dict to raw model and extract contexts attached to each field
+	dict, contexts := utils.UnwrapPairWithValues[context.Context](dict)
+
+	if opts.Interpolate != nil && !opts.SkipInterpolation {
+		interpOpts := *opts.Interpolate
+		interpOpts.LookupValueMapping = extractContextMapping[interp.LookupValue](contexts, consts.LookupValueKey{})
+
+		// Per-field named mappings based on its context
+		namedMappings := map[tree.Path]template.NamedMappings{}
+		for path, mappings := range extractContextMapping[map[tree.Path]template.NamedMappings](contexts, consts.NamedMappingsKey{}) {
+			namedMappings[path] = mappings[tree.NewPath()] // Narrow scope to field-level
+		}
+		interpOpts.NamedMappings = interp.MergeNamedMappings(interpOpts.NamedMappings, namedMappings)
+
+		// Resolve named mappings based on merged dict
+		if len(opts.NamedMappingsResolvers) > 0 {
+			namedMappings, err := interp.ResolveNamedMappings(ctx, dict, interpOpts, opts.NamedMappingsResolvers)
+			if err != nil {
+				return nil, err
+			}
+			interpOpts.NamedMappings = namedMappings
+		}
+
+		dict, err = interp.Interpolate(dict, interpOpts)
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	if !opts.SkipValidation {
+		err := schema.Validate(dict)
+		if err, ok := err.(schema.ValidationError); ok {
+			for path, ctx := range contexts {
+				if path.HasPrefix(tree.Path(err.Field())) {
+					if file, ok := ctx.Value(consts.ComposeFileKey{}).(string); ok {
+						return nil, fmt.Errorf("validating %s: %w", file, err)
+					}
+				}
+			}
+		}
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	// Wrap dict with contexts again to make contexts participate in `Canonical` and `SetDefaultValues` transformation
+	dict = utils.WrapPairWithValues(dict, contexts)
+
+	dict, err = transform.Canonical(dict, opts.SkipInterpolation)
+	if err != nil {
+		return nil, err
+	}
+
+	dict = OmitEmpty(dict)
+
+	// Canonical transformation can reveal duplicates, typically as ports can be a range and conflict with an override
+	dict, err = override.EnforceUnicity(dict)
+	if err != nil {
+		return nil, err
+	}
+
 	if !opts.SkipDefaultValues {
 		dict, err = transform.SetDefaultValues(dict)
 		if err != nil {
@@ -441,8 +505,12 @@ func loadYamlModel(ctx context.Context, config types.ConfigDetails, opts *Option
 		}
 	}
 
+	// Unwrap dict to final raw model after all structual transformations have been done
+	dict, contexts = utils.UnwrapPairWithValues[context.Context](dict)
+
 	if opts.ResolvePaths {
-		err = paths.ResolveRelativePaths(dict, workingDir, opts.RemoteResourceFilters())
+		workingDirMapping := extractContextMapping[string](contexts, consts.WorkingDirKey{})
+		err = paths.ResolveRelativePathsWithBaseMapping(dict, workingDir, opts.RemoteResourceFilters(), workingDirMapping)
 		if err != nil {
 			return nil, err
 		}
@@ -454,6 +522,7 @@ func loadYamlModel(ctx context.Context, config types.ConfigDetails, opts *Option
 
 func loadYamlFile(ctx context.Context, file types.ConfigFile, opts *Options, workingDir string, environment types.Mapping, ct *cycleTracker, dict map[string]interface{}, included []string) (map[string]interface{}, PostProcessor, error) {
 	ctx = context.WithValue(ctx, consts.ComposeFileKey{}, file.Filename)
+	ctx = context.WithValue(ctx, consts.WorkingDirKey{}, workingDir)
 	if file.Content == nil && file.Config == nil {
 		content, err := os.ReadFile(file.Filename)
 		if err != nil {
@@ -472,14 +541,18 @@ func loadYamlFile(ctx context.Context, file types.ConfigFile, opts *Options, wor
 			return errors.New("Top-level object must be a mapping")
 		}
 
-		if opts.Interpolate != nil && !opts.SkipInterpolation {
-			cfg, err = interp.Interpolate(cfg, *opts.Interpolate)
+		fixEmptyNotNull(cfg)
+
+		if opts.Interpolate != nil && !opts.SkipInterpolation && len(opts.NamedMappingsResolvers) > 0 {
+			namedMappings, err := interp.ResolveGlobalNamedMappings(ctx, *opts.Interpolate, opts.NamedMappingsResolvers)
 			if err != nil {
 				return err
 			}
+			ctx = context.WithValue(ctx, consts.NamedMappingsKey{}, namedMappings)
 		}
 
-		fixEmptyNotNull(cfg)
+		// Embed context into each of cfg's field value
+		cfg = utils.WrapPairWithValue(cfg, ctx)
 
 		if !opts.SkipExtends {
 			err = ApplyExtends(ctx, cfg, opts, ct, processors...)
@@ -513,24 +586,12 @@ func loadYamlFile(ctx context.Context, file types.ConfigFile, opts *Options, wor
 		}
 
 		if !opts.SkipValidation {
-			if err := schema.Validate(dict); err != nil {
-				return fmt.Errorf("validating %s: %w", file.Filename, err)
-			}
 			if _, ok := dict["version"]; ok {
 				opts.warnObsoleteVersion(file.Filename)
 				delete(dict, "version")
 			}
 		}
 
-		dict, err = transform.Canonical(dict, opts.SkipInterpolation)
-		if err != nil {
-			return err
-		}
-
-		dict = OmitEmpty(dict)
-
-		// Canonical transformation can reveal duplicates, typically as ports can be a range and conflict with an override
-		dict, err = override.EnforceUnicity(dict)
 		return err
 	}
 
@@ -772,7 +833,7 @@ func processExtensions(dict map[string]any, p tree.Path, extensions map[string]a
 		case []interface{}:
 			for i, e := range v {
 				if m, ok := e.(map[string]interface{}); ok {
-					v[i], err = processExtensions(m, p.Next(strconv.Itoa(i)), extensions)
+					v[i], err = processExtensions(m, p.NextIndex(i), extensions)
 					if err != nil {
 						return nil, err
 					}
@@ -852,6 +913,16 @@ func secretConfigDecoderHook(from, to reflect.Type, data interface{}) (interface
 
 	// Return the original data so the rest is handled by default mapstructure logic
 	return data, nil
+}
+
+func extractContextMapping[T any, U any](contexts map[tree.Path]context.Context, key U) map[tree.Path]T {
+	m := map[tree.Path]T{}
+	for path, ctx := range contexts {
+		if value, ok := ctx.Value(key).(T); ok {
+			m[path] = value
+		}
+	}
+	return m
 }
 
 // keys need to be converted to strings for jsonschema
