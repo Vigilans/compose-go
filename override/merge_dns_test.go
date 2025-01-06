@@ -43,16 +43,16 @@ services:
 `, `
 services:
   test:
-    image: foo
+    image: !right foo
     dns:
-      - 8.8.8.8
-      - 9.9.9.9
+      - !right 8.8.8.8
+      - !left  9.9.9.9
     dns_opt:
-      - use-vc
-      - no-tld-query
+      - !right use-vc
+      - !left  no-tld-query
     dns_search:
-      - dc1.example.com
-      - dc2.example.com
+      - !right dc1.example.com
+      - !left  dc2.example.com
 `)
 }
 
@@ -81,16 +81,16 @@ services:
 `, `
 services:
   test:
-    image: foo
+    image: !right foo
     dns:
-      - 8.8.8.8
-      - 10.10.10.10
-      - 9.9.9.9
+      - !right 8.8.8.8
+      - !right 10.10.10.10
+      - !left  9.9.9.9
     dns_opt:
-      - use-vc
-      - no-tld-query
+      - !right use-vc
+      - !left  no-tld-query
     dns_search:
-      - dc1.example.com
-      - dc2.example.com
+      - !right dc1.example.com
+      - !left  dc2.example.com
 `)
 }

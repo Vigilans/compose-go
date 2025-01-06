@@ -31,6 +31,7 @@ import (
 	"gotest.tools/v3/assert"
 	is "gotest.tools/v3/assert/cmp"
 
+	interp "github.com/compose-spec/compose-go/v2/interpolation"
 	"github.com/compose-spec/compose-go/v2/types"
 )
 
@@ -451,7 +452,7 @@ services:
 
 	svcB, err := actual.GetService("b")
 	assert.NilError(t, err)
-	assert.Equal(t, svcB.Build.Context, tmpdir)
+	assert.Equal(t, svcB.Build.Context, bDir)
 }
 
 func TestLoadExtendsWihReset(t *testing.T) {
@@ -913,6 +914,426 @@ networks:
 	}
 
 	assertEqual(t, expected, config)
+}
+
+func TestLoadWithInterpolationNamedMappings(t *testing.T) {
+	dict := `
+name: test-project
+
+services:
+  service_1:
+    image: image:${service[name]}
+    container_name: container.${service[name]}
+    user: ${env[USER]}
+    working_dir: ${env[PWD]}
+    x-test-field-1: ${image[name]} ${container[name]} ${service[scale]}
+    x-test-field-2: ${container[user]} ${container[working-dir]}
+    x-test-field-3: ${container[image][name]} ${service[containers][0][image]}
+    labels:
+      "foo_from_env_file": "3"
+    environment:
+      "NUMBER": ${labels[${container[env][FOO]}]}
+    env_file: example1.env
+
+networks:
+  network_1:
+    name: ${network[driver]}-network
+    driver: bridge
+    x-test-field: ${network[name]} ${network[external]}
+
+volumes:
+  volume_1:
+    name: ${volume[driver]}-volume
+    driver: overlay
+    x-test-field: ${volume[name]} ${volume[external]}
+
+configs:
+  config_1:
+    name: ${config[content]}-config
+    content: test
+    x-test-field: ${config[name]} ${config[content]} ${config[data]}
+
+secrets:
+  secret_1:
+    environment: PWD
+    x-test-field: ${secret[data]}
+  secret_2:
+    file: testdata/file/access_key.txt
+    x-test-field: ${secret[data]}
+`
+	env := map[string]string{
+		"USER": "test-user",
+		"PWD":  os.Getenv("PWD"),
+	}
+
+	configDetails := buildConfigDetails(dict, env)
+	config, err := Load(configDetails, func(options *Options) {
+		options.SkipNormalization = true
+		options.SkipConsistencyCheck = true
+		options.NamedMappingsResolvers = []interp.NamedMappingsResolver{
+			interp.EnvNamedMappingsResolver{},
+			NewModelNamedMappingsResolver(configDetails, options),
+		}
+	})
+	assert.NilError(t, err)
+
+	workingDir, err := os.Getwd()
+	assert.NilError(t, err)
+
+	expected := &types.Project{
+		Name:        "test-project",
+		Environment: env,
+		WorkingDir:  workingDir,
+		Services: types.Services{
+			"service_1": {
+				Name:          "service_1",
+				ContainerName: "container.service_1",
+				Image:         "image:service_1",
+				User:          "test-user",
+				WorkingDir:    env["PWD"],
+				Extensions: types.Extensions{
+					"x-test-field-1": fmt.Sprintf("%s %s %d", "image:service_1", "container.service_1", 1),
+					"x-test-field-2": fmt.Sprintf("%s %s", "test-user", env["PWD"]),
+					"x-test-field-3": fmt.Sprintf("%s %s", "image:service_1", "image:service_1"),
+				},
+				Labels: types.Labels{
+					"foo_from_env_file": "3",
+				},
+				Environment: types.MappingWithEquals{
+					"BAR":                 strPtr("bar_from_env_file"),
+					"BAZ":                 strPtr("baz_from_env_file"),
+					"ENV.WITH.DOT":        strPtr("ok"),
+					"ENV_WITH_UNDERSCORE": strPtr("ok"),
+					"FOO":                 strPtr("foo_from_env_file"),
+					"NUMBER":              strPtr("3"),
+				},
+				EnvFiles: []types.EnvFile{
+					{
+						Path:     filepath.Join(workingDir, "example1.env"),
+						Required: true,
+					},
+				},
+			},
+		},
+		Networks: types.Networks{
+			"network_1": {
+				Name:   "bridge-network",
+				Driver: "bridge",
+				Extensions: types.Extensions{
+					"x-test-field": "bridge-network false",
+				},
+			},
+		},
+		Volumes: types.Volumes{
+			"volume_1": {
+				Name:   "overlay-volume",
+				Driver: "overlay",
+				Extensions: types.Extensions{
+					"x-test-field": "overlay-volume false",
+				},
+			},
+		},
+		Configs: types.Configs{
+			"config_1": {
+				Name:    "test-config",
+				Content: "test",
+				Extensions: types.Extensions{
+					"x-test-field": "test-config test test",
+				},
+			},
+		},
+		Secrets: types.Secrets{
+			"secret_1": {
+				Environment: "PWD",
+				Content:     workingDir,
+				Extensions: types.Extensions{
+					"x-test-field": workingDir,
+				},
+			},
+			"secret_2": {
+				File: filepath.Join(workingDir, "testdata/file/access_key.txt"),
+				Extensions: types.Extensions{
+					"x-test-field": "12345678-abcd-11ef-a236-d7497f4e9904",
+				},
+			},
+		},
+	}
+	assertEqual(t, config, expected)
+}
+
+func TestLoadWithInterpolationNamedMappingsWithIncludesExtends(t *testing.T) {
+	fileName := "compose.yml"
+	tmpdir := t.TempDir()
+	env := map[string]string{}
+
+	// file in root (includes /module/compose.yml)
+	yaml := `
+name: test-project
+x-project-fields: ${project[name]} ${project[working-dir]}
+x-compose-fields: ${compose[root-dir]} ${compose[config-dir]}
+x-var-name: ${env[VAR_NAME]}
+
+include:
+  - path: ${project[working-dir]}/module/compose.yml`
+	path := createFile(t, tmpdir, yaml, fileName)
+	createFile(t, tmpdir, `VAR_NAME=value`, "custom.env")
+
+	// file in /module (includes /module/submodule/compose.yml, service extends /extends/compose.yml)
+	yaml = `
+include:
+  - path: ${compose[root-dir]}/module/submodule/compose.yml
+    env_file: ../custom.env
+
+services:
+  service-module:
+    extends:
+      file: ../extends/compose.yml
+      service: service-extends
+    x-project-fields: ${project[name]} ${project[working-dir]}
+    x-compose-fields: ${compose[root-dir]} ${compose[config-dir]}
+    x-var-name: ${env[VAR_NAME]}`
+	createFileSubDir(t, tmpdir, "module", yaml, fileName)
+
+	// file in /extends
+	yaml = `
+services:
+  service-extends:
+    image: alpine
+    environment:
+      - VAR_NAME
+    x-project-fields: ${project[name]} ${project[working-dir]}
+    x-compose-fields: ${compose[root-dir]} ${compose[config-dir]}`
+	createFileSubDir(t, tmpdir, "extends", yaml, fileName)
+
+	// file in /module/submodule (service extends /extends/compose.yml)
+	yaml = `
+services:
+  service-submodule:
+    extends:
+      file: ${compose[root-dir]}/extends/compose.yml
+      service: service-extends
+    x-var-name: ${env[VAR_NAME]}`
+	createFileSubDir(t, tmpdir, "module/submodule", yaml, fileName)
+
+	configDetails := types.ConfigDetails{
+		WorkingDir: tmpdir,
+		ConfigFiles: []types.ConfigFile{{
+			Filename: path,
+		}},
+		Environment: env,
+	}
+	config, err := Load(configDetails, func(options *Options) {
+		options.SkipNormalization = true
+		options.SkipConsistencyCheck = true
+		options.NamedMappingsResolvers = []interp.NamedMappingsResolver{
+			interp.EnvNamedMappingsResolver{},
+			NewModelNamedMappingsResolver(configDetails, options),
+		}
+	})
+	assert.NilError(t, err)
+
+	expected := &types.Project{
+		Name:        "test-project",
+		Environment: env,
+		WorkingDir:  tmpdir,
+		Extensions: types.Extensions{
+			// Project dir, compose root and compose conf dir are / in root context
+			"x-project-fields": fmt.Sprintf("%s %s", "test-project", tmpdir),
+			"x-compose-fields": fmt.Sprintf("%s %s", tmpdir, tmpdir),
+			"x-var-name":       "",
+		},
+		Services: types.Services{
+			"service-module": {
+				Name:  "service-module",
+				Image: "alpine",
+				Environment: types.MappingWithEquals{
+					"VAR_NAME": nil,
+				},
+				Extensions: types.Extensions{
+					// /module/compose.yml is included, so ${project[working-dir]} is /module
+					"x-project-fields": fmt.Sprintf("%s %s", "module", filepath.Join(tmpdir, "module")),
+					// This field is not overriden by extends, so ${compose[config-dir]} is still /module
+					"x-compose-fields": fmt.Sprintf("%s %s", tmpdir, filepath.Join(tmpdir, "module")),
+					"x-var-name":       "",
+				},
+			},
+			"service-submodule": {
+				Name:  "service-submodule",
+				Image: "alpine",
+				Environment: types.MappingWithEquals{
+					"VAR_NAME": strPtr("value"),
+				},
+				Extensions: types.Extensions{
+					// Though this field is from extends, extends does not change project dir, so ${project[working-dir]} is /module/submodule
+					"x-project-fields": fmt.Sprintf("%s %s", "submodule", filepath.Join(tmpdir, "module/submodule")),
+					// This field is from extends, so ${compose[config-dir]} is the dir of /extends/compose.yml (/extends)
+					"x-compose-fields": fmt.Sprintf("%s %s", tmpdir, filepath.Join(tmpdir, "extends")),
+					"x-var-name":       "value",
+				},
+			},
+		},
+	}
+	assertEqual(t, config, expected)
+}
+
+func TestLoadWithInterpolationNamedMappingsWithCrossScopeReference(t *testing.T) {
+	fileName := "compose.yml"
+	tmpdir := t.TempDir()
+	env := map[string]string{
+		"USER":         "jenny",
+		"TESTDATA_DIR": filepath.Join(os.Getenv("PWD"), "testdata"),
+	}
+
+	// file in root
+	yaml := `
+name: test-project
+
+include:
+  - path: ./module1/compose.yml
+  - path: ./module2/compose.yml`
+	path := createFile(t, tmpdir, yaml, fileName)
+	createFile(t, tmpdir, `VAR_NAME=value`, "custom.env")
+	createFile(t, tmpdir, `LABEL_NAME=value`, "custom.label")
+
+	// file in /module1
+	yaml = `
+services:
+  service_1:
+    image: test-image
+    container_name: test-container
+    env_file: ../custom.env
+    label_file: ../custom.label
+    x-test-field-1: ${configs[user_from_file]} ${configs[user_from_env]} ${configs[user_from_content]}
+    x-test-field-2: ${secrets[user_from_env]} ${secrets[access_key]}
+
+networks:
+  network_1:
+    name: test-network
+    driver: bridge
+    x-test-field: ${services[service_1][scale]} ${containers[test-container][image]}
+
+configs:
+  user_from_file:
+    file: ${env[TESTDATA_DIR]}/file/user.txt
+  user_from_env:
+    environment: USER
+
+secrets:
+  user_from_env:
+    environment: USER
+    x-test-field: secret-${configs[user_from_content]}`
+	createFileSubDir(t, tmpdir, "module1", yaml, fileName)
+
+	// file in /module2
+	yaml = `
+volumes:
+  volume_1:
+    driver: overlay
+    x-test-field: ${networks[test-network][driver]}
+
+configs:
+  user_from_content:
+    content: content-${configs[user_from_file]}
+    x-test-field: ${volumes[volume_1][driver]}
+
+secrets:
+  access_key:
+    file: ${env[TESTDATA_DIR]}/file/access_key.txt
+    x-test-field: ${containers[test-container][env][VAR_NAME]} ${containers[test-container][labels][LABEL_NAME]}`
+	createFileSubDir(t, tmpdir, "module2", yaml, fileName)
+
+	configDetails := types.ConfigDetails{
+		WorkingDir: tmpdir,
+		ConfigFiles: []types.ConfigFile{{
+			Filename: path,
+		}},
+		Environment: env,
+	}
+	config, err := Load(configDetails, func(options *Options) {
+		options.SkipNormalization = true
+		options.SkipConsistencyCheck = true
+		options.NamedMappingsResolvers = []interp.NamedMappingsResolver{
+			interp.EnvNamedMappingsResolver{},
+			NewModelNamedMappingsResolver(configDetails, options),
+		}
+	})
+	assert.NilError(t, err)
+
+	expected := &types.Project{
+		Name:        "test-project",
+		Environment: env,
+		WorkingDir:  tmpdir,
+		Services: types.Services{
+			"service_1": {
+				Name:          "service_1",
+				Image:         "test-image",
+				ContainerName: "test-container",
+				Environment:   types.MappingWithEquals{"VAR_NAME": strPtr("value")},
+				EnvFiles: []types.EnvFile{
+					{
+						Path:     filepath.Join(tmpdir, "custom.env"),
+						Required: true,
+					},
+				},
+				Labels: types.Labels{"LABEL_NAME": "value"},
+				LabelFiles: []string{
+					filepath.Join(tmpdir, "custom.label"),
+				},
+				Extensions: types.Extensions{
+					"x-test-field-1": "test-user jenny content-test-user",
+					"x-test-field-2": "jenny 12345678-abcd-11ef-a236-d7497f4e9904",
+				},
+			},
+		},
+		Networks: types.Networks{
+			"network_1": {
+				Name:   "test-network",
+				Driver: "bridge",
+				Extensions: types.Extensions{
+					"x-test-field": "1 test-image",
+				},
+			},
+		},
+		Volumes: types.Volumes{
+			"volume_1": {
+				Driver: "overlay",
+				Extensions: types.Extensions{
+					"x-test-field": "bridge",
+				},
+			},
+		},
+		Configs: map[string]types.ConfigObjConfig{
+			"user_from_file": {
+				File: filepath.Join(os.Getenv("PWD"), "testdata/file/user.txt"),
+			},
+			"user_from_env": {
+				Environment: "USER",
+				Content:     "jenny",
+			},
+			"user_from_content": {
+				Content: "content-test-user",
+				Extensions: types.Extensions{
+					"x-test-field": "overlay",
+				},
+			},
+		},
+		Secrets: map[string]types.SecretConfig{
+			"user_from_env": {
+				Environment: "USER",
+				Content:     "jenny",
+				Extensions: types.Extensions{
+					"x-test-field": "secret-content-test-user",
+				},
+			},
+			"access_key": {
+				File: filepath.Join(os.Getenv("PWD"), "testdata/file/access_key.txt"),
+				Extensions: types.Extensions{
+					"x-test-field": "value value",
+				},
+			},
+		},
+	}
+	assertEqual(t, config, expected)
 }
 
 func TestUnsupportedProperties(t *testing.T) {
@@ -2104,6 +2525,65 @@ func TestLoadWithExtendsWithContextUrl(t *testing.T) {
 			},
 			Environment: types.MappingWithEquals{},
 			Networks:    map[string]*types.ServiceNetworkConfig{"default": nil},
+		},
+	}
+	assert.Check(t, is.DeepEqual(expServices, actual.Services))
+}
+
+// From https://github.com/docker/compose/issues/12001, https://github.com/docker/compose/issues/11990
+func TestLoadWithExtendsWithTemplates(t *testing.T) {
+	tmpdir := t.TempDir()
+	// docker-compose.yml
+	yaml := `
+services:
+  test_service_2:
+    extends:
+      file: ./docker-compose2.yml
+      service: test_service`
+	path := createFile(t, tmpdir, yaml, "docker-compose.yml")
+
+	// docker-compose2.yml
+	yaml = `
+services:
+  test_service:
+    image: busybox
+    pull_policy: ${IMAGE_PULL_POLICY}
+    volumes:
+      - "$HOME/.Xauthority:/root/.Xauthority:ro"
+    healthcheck:
+      test: ['CMD-SHELL', "echo $$SOME_VAR"]`
+	createFile(t, tmpdir, yaml, "docker-compose2.yml")
+
+	actual, err := Load(types.ConfigDetails{
+		WorkingDir: tmpdir,
+		ConfigFiles: []types.ConfigFile{{
+			Filename: path,
+		}},
+		Environment: map[string]string{
+			"HOME":              "/home/user",
+			"IMAGE_PULL_POLICY": "always",
+		},
+	}, func(options *Options) {
+		options.SkipNormalization = true
+		options.ResolvePaths = true
+		options.SetProjectName("project", true)
+	})
+	assert.NilError(t, err)
+
+	expServices := types.Services{
+		"test_service_2": {
+			Name:        "test_service_2",
+			Image:       "busybox",
+			PullPolicy:  "always",
+			Environment: types.MappingWithEquals{},
+			Volumes: []types.ServiceVolumeConfig{{
+				Type:     "bind",
+				Source:   "/home/user/.Xauthority",
+				Target:   "/root/.Xauthority",
+				ReadOnly: true,
+				Bind:     &types.ServiceVolumeBind{CreateHostPath: true},
+			}},
+			HealthCheck: &types.HealthCheckConfig{Test: types.HealthCheckTest{"CMD-SHELL", "echo $SOME_VAR"}},
 		},
 	}
 	assert.Check(t, is.DeepEqual(expServices, actual.Services))

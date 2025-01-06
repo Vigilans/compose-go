@@ -28,18 +28,17 @@ func transformKeyValue(data any, p tree.Path, ignoreParseError bool) (any, error
 	case map[string]any:
 		return v, nil
 	case []any:
-		mapping := map[string]any{}
-		for _, e := range v {
+		mapping, err := convertIntoMapping(v, func(e any) (string, any, error) {
 			before, after, found := strings.Cut(e.(string), "=")
 			if !found {
-				if ignoreParseError {
-					return data, nil
-				}
-				return nil, fmt.Errorf("%s: invalid value %s, expected key=value", p, e)
+				return "", nil, fmt.Errorf("%s: invalid value %s, expected key=value", p, e)
 			}
-			mapping[before] = after
+			return before, after, nil
+		})
+		if err != nil && ignoreParseError {
+			return v, nil
 		}
-		return mapping, nil
+		return mapping, err
 	default:
 		return nil, fmt.Errorf("%s: invalid type %T", p, v)
 	}

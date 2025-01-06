@@ -22,6 +22,7 @@ import (
 	"strings"
 
 	"github.com/compose-spec/compose-go/v2/tree"
+	"github.com/compose-spec/compose-go/v2/utils"
 	"golang.org/x/exp/slices"
 )
 
@@ -47,7 +48,7 @@ func init() {
 	mergeSpecials["services.*.build"] = mergeBuild
 	mergeSpecials["services.*.build.args"] = mergeToSequence
 	mergeSpecials["services.*.build.additional_contexts"] = mergeToSequence
-	mergeSpecials["services.*.build.extra_hosts"] = mergeExtraHosts
+	mergeSpecials["services.*.build.extra_hosts"] = mergeToSequence
 	mergeSpecials["services.*.build.labels"] = mergeToSequence
 	mergeSpecials["services.*.command"] = override
 	mergeSpecials["services.*.depends_on"] = mergeDependsOn
@@ -59,7 +60,7 @@ func init() {
 	mergeSpecials["services.*.env_file"] = mergeToSequence
 	mergeSpecials["services.*.label_file"] = mergeToSequence
 	mergeSpecials["services.*.environment"] = mergeToSequence
-	mergeSpecials["services.*.extra_hosts"] = mergeExtraHosts
+	mergeSpecials["services.*.extra_hosts"] = mergeToSequence
 	mergeSpecials["services.*.healthcheck.test"] = override
 	mergeSpecials["services.*.labels"] = mergeToSequence
 	mergeSpecials["services.*.logging"] = mergeLogging
@@ -134,14 +135,13 @@ func mergeLogging(c any, o any, p tree.Path) (any, error) {
 func mergeBuild(c any, o any, path tree.Path) (any, error) {
 	toBuild := func(c any) map[string]any {
 		switch v := c.(type) {
-		case string:
+		case map[string]any:
+			return v
+		default:
 			return map[string]any{
 				"context": v,
 			}
-		case map[string]any:
-			return v
 		}
-		return nil
 	}
 	return mergeMappings(toBuild(c), toBuild(o), path)
 }
@@ -164,22 +164,6 @@ func mergeNetworks(c any, o any, path tree.Path) (any, error) {
 	return mergeMappings(right, left, path)
 }
 
-func mergeExtraHosts(c any, o any, _ tree.Path) (any, error) {
-	right := convertIntoSequence(c)
-	left := convertIntoSequence(o)
-	// Rewrite content of left slice to remove duplicate elements
-	i := 0
-	for _, v := range left {
-		if !slices.Contains(right, v) {
-			left[i] = v
-			i++
-		}
-	}
-	// keep only not duplicated elements from left slice
-	left = left[:i]
-	return append(right, left...), nil
-}
-
 func mergeToSequence(c any, o any, _ tree.Path) (any, error) {
 	right := convertIntoSequence(c)
 	left := convertIntoSequence(o)
@@ -187,34 +171,32 @@ func mergeToSequence(c any, o any, _ tree.Path) (any, error) {
 }
 
 func convertIntoSequence(value any) []any {
-	switch v := value.(type) {
+	switch value := value.(type) {
 	case map[string]any:
 		var seq []any
-		for k, val := range v {
-			if val == nil {
-				seq = append(seq, k)
-			} else {
-				switch vl := val.(type) {
-				// if val is an array we need to add the key with each value one by one
-				case []any:
-					for _, vlv := range vl {
-						seq = append(seq, fmt.Sprintf("%s=%v", k, vlv))
+		for k, elem := range value {
+			for _, v := range convertIntoSequence(elem) {
+				seq = append(seq, utils.TransformPair(v, func(v any) any {
+					switch v := v.(type) {
+					case nil:
+						return k
+					default:
+						return fmt.Sprintf("%s=%v", k, v)
 					}
-				default:
-					seq = append(seq, fmt.Sprintf("%s=%v", k, val))
-				}
+				}))
 			}
 		}
 		slices.SortFunc(seq, func(a, b any) int {
-			return cmp.Compare(a.(string), b.(string))
+			return cmp.Compare(utils.UnwrapPair(a).(string), utils.UnwrapPair(b).(string))
 		})
 		return seq
 	case []any:
-		return v
-	case string:
-		return []any{v}
+		return value
+	case nil:
+		return nil
+	default:
+		return []any{value}
 	}
-	return nil
 }
 
 func mergeUlimit(_ any, o any, p tree.Path) (any, error) {
@@ -231,10 +213,10 @@ func mergeIPAMConfig(c any, o any, path tree.Path) (any, error) {
 		right := convertIntoMapping(original, nil)
 		for _, override := range o.([]any) {
 			left := convertIntoMapping(override, nil)
-			if left["subnet"] != right["subnet"] {
+			if utils.UnwrapPair(left["subnet"]) != utils.UnwrapPair(right["subnet"]) {
 				// check if left is already in ipamConfigs, add it if not and continue with the next config
 				if !slices.ContainsFunc(ipamConfigs, func(a any) bool {
-					return a.(map[string]any)["subnet"] == left["subnet"]
+					return utils.UnwrapPair(a.(map[string]any)["subnet"]) == utils.UnwrapPair(left["subnet"])
 				}) {
 					ipamConfigs = append(ipamConfigs, left)
 					continue
@@ -246,7 +228,7 @@ func mergeIPAMConfig(c any, o any, path tree.Path) (any, error) {
 			}
 			// find index of potential previous config with the same subnet in ipamConfigs
 			indexIfExist := slices.IndexFunc(ipamConfigs, func(a any) bool {
-				return a.(map[string]any)["subnet"] == merged["subnet"]
+				return utils.UnwrapPair(a.(map[string]any)["subnet"]) == utils.UnwrapPair(merged["subnet"])
 			})
 			// if a previous config is already in ipamConfigs, replace it
 			if indexIfExist >= 0 {
@@ -266,13 +248,16 @@ func convertIntoMapping(a any, defaultValue map[string]any) map[string]any {
 		return v
 	case []any:
 		converted := map[string]any{}
-		for _, s := range v {
-			if defaultValue == nil {
-				converted[s.(string)] = nil
-			} else {
-				// Create a new map for each key
-				converted[s.(string)] = copyMap(defaultValue)
-			}
+		for _, entry := range v {
+			var key string
+			value := utils.TransformPair(entry, func(val any) any {
+				key = val.(string)
+				if defaultValue != nil {
+					return copyMap(defaultValue)
+				}
+				return nil
+			})
+			converted[key] = value
 		}
 		return converted
 	}

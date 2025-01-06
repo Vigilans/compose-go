@@ -35,10 +35,10 @@ services:
 `, `
 services:
   test:
-    image: foo
+    image: !right foo
     sysctls:
-      - net.ipv6.conf.all.disable_ipv6=1
-      - net.ipv4.tcp_keepalive_time=300
+      - !right net.ipv6.conf.all.disable_ipv6=1
+      - !left  net.ipv4.tcp_keepalive_time=300
 `)
 }
 
@@ -57,10 +57,10 @@ services:
 `, `
 services:
   test:
-    image: foo
+    image: !right foo
     sysctls:
-      - net.ipv6.conf.all.disable_ipv6=1
-      - net.ipv4.tcp_keepalive_time=300
+      - !right net.ipv6.conf.all.disable_ipv6=1
+      - !left  net.ipv4.tcp_keepalive_time=300
 `)
 }
 
@@ -79,10 +79,10 @@ services:
 `, `
 services:
   test:
-    image: foo
+    image: !right foo
     sysctls:
-      - net.ipv6.conf.all.disable_ipv6=1
-      - net.ipv4.tcp_keepalive_time=300
+      - !right net.ipv6.conf.all.disable_ipv6=1
+      - !left  net.ipv4.tcp_keepalive_time=300
 `)
 }
 
@@ -101,6 +101,6 @@ services:
 services:
   test:
     sysctls:
-      - net.ipv4.tcp_keepalive_time=3
+      - !left net.ipv4.tcp_keepalive_time=3
 `)
 }

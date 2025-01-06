@@ -36,10 +36,10 @@ services:
 `, `
 services:
   test:
-    image: foo
+    image: !right foo
     networks:
-      front-network:
-      back-network:
+      front-network: !left
+      back-network:  !right
 `)
 }
 
@@ -74,21 +74,21 @@ services:
 `, `
 services:
   test:
-    image: foo
+    image: !right foo
     networks:
       network1:
         aliases:
-          - alias1
-          - alias2
-          - alias3
+          - !left  alias1
+          - !right alias2
+          - !left  alias3
         link_local_ips:
-          - 57.123.22.11
-          - 57.123.22.13
-          - 57.123.22.12
+          - !right 57.123.22.11
+          - !left  57.123.22.13
+          - !left  57.123.22.12
       network2:
         aliases:
-          - alias1
-          - alias3
+          - !right alias1
+          - !right alias3
 `)
 }
 
@@ -120,21 +120,21 @@ services:
 `, `
 services:
   test:
-    image: foo
+    image: !left foo
     networks:
-      front-network:
-      back-network:
+      front-network: !right
+      back-network:  !right
       network1:
         aliases:
-          - alias1
-          - alias2
+          - !left alias1
+          - !left alias2
         link_local_ips:
-          - 57.123.22.11
-          - 57.123.22.13
+          - !left 57.123.22.11
+          - !left 57.123.22.13
       network2:
         aliases:
-          - alias1
-          - alias3
+          - !left alias1
+          - !left alias3
 `)
 }
 
@@ -194,35 +194,35 @@ networks:
 `, `
 services:
   test:
-    image: foo
+    image: !left foo
 networks:
   network1:
     ipam:
       config:
-        - subnet: 172.28.0.0/16
-          ip_range: 172.28.5.1/24
-          gateway: 172.28.5.254
+        - subnet: !left 172.28.0.0/16
+          ip_range: !left 172.28.5.1/24
+          gateway: !left 172.28.5.254
           aux_addresses:
-            host1: 172.28.1.5
-            host2: 172.28.1.4
-            host3: 172.28.1.7
-            host4: 172.28.1.10
-        - subnet: 172.28.10.0/16
-          ip_range: 172.28.10.1/24
-          gateway: 172.28.10.254
+            host1: !left  172.28.1.5
+            host2: !left  172.28.1.4
+            host3: !right 172.28.1.7
+            host4: !left  172.28.1.10
+        - subnet: !left 172.28.10.0/16
+          ip_range: !left 172.28.10.1/24
+          gateway: !left 172.28.10.254
           aux_addresses:
-            host1: 172.28.10.5
-            host2: 172.28.10.4
-            host3: 172.28.10.10
+            host1: !left 172.28.10.5
+            host2: !left 172.28.10.4
+            host3: !left 172.28.10.10
       options:
-        foo: bar
-        bar: foo
-        baz: "0"
+        foo: !right bar
+        bar: !left  foo
+        baz: !left  "0"
     labels:
-      - "com.example.department=Finance"
-      - "com.example.description=Financial transaction network"
-      - "com.example.label-with-empty-value="
-      - "com.example.department-new=New"
-  network2:
+      - !right "com.example.department=Finance"
+      - !left  "com.example.description=Financial transaction network"
+      - !left  "com.example.label-with-empty-value="
+      - !left  "com.example.department-new=New"
+  network2: !left
 `)
 }

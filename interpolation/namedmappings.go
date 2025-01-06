@@ -30,29 +30,31 @@ type NamedMappingsResolver interface {
 
 	// Resolve resolves named mappings based on model's value at the given path
 	Resolve(ctx context.Context, value interface{}, path tree.Path, opts Options) (template.NamedMappings, error)
+
+	// ResolveGlobal resolves named mappings simply based on provided context, before any model value is available
+	ResolveGlobal(ctx context.Context, opts Options) (template.NamedMappings, error)
 }
 
 type EnvNamedMappingsResolver struct{}
 
 func (r EnvNamedMappingsResolver) Accept(path tree.Path) bool {
-	return path == "" // EnvNamedMappingsResolver applies at global level
+	return false // EnvNamedMappingsResolver does not resolve named mappings based on model's value
 }
 
 func (r EnvNamedMappingsResolver) Resolve(ctx context.Context, value interface{}, path tree.Path, opts Options) (template.NamedMappings, error) {
+	return nil, nil
+}
+
+func (r EnvNamedMappingsResolver) ResolveGlobal(ctx context.Context, opts Options) (template.NamedMappings, error) {
 	return template.NamedMappings{
 		consts.HostEnvMapping: template.ToVariadicMapping(template.Mapping(opts.LookupValue)),
 	}, nil
 }
 
 func ResolveNamedMappings(ctx context.Context, value interface{}, opts Options, resolvers []NamedMappingsResolver) (namedMappings map[tree.Path]template.NamedMappings, err error) {
-	namedMappings = map[tree.Path]template.NamedMappings{}
-
-	// Deep copy namedMappings from opts as initial
-	for path, mappings := range opts.NamedMappings {
-		namedMappings[path] = template.NamedMappings{}
-		for key, mapping := range mappings {
-			namedMappings[path][key] = mapping
-		}
+	namedMappings, err = ResolveGlobalNamedMappings(ctx, opts, resolvers)
+	if err != nil {
+		return nil, err
 	}
 	opts.NamedMappings = namedMappings // All resolvers will use and update this same underlying named mappings
 
@@ -88,8 +90,8 @@ func recursiveResolveNamedMappings(ctx context.Context, value interface{}, path 
 			}
 		}
 	case []interface{}:
-		for _, elem := range value {
-			err := recursiveResolveNamedMappings(ctx, elem, tree.PathMatchList, opts, resolver, namedMappings)
+		for i, elem := range value {
+			err := recursiveResolveNamedMappings(ctx, elem, path.NextIndex(i), opts, resolver, namedMappings)
 			if err != nil {
 				return err
 			}
@@ -97,6 +99,30 @@ func recursiveResolveNamedMappings(ctx context.Context, value interface{}, path 
 	}
 
 	return nil
+}
+
+func ResolveGlobalNamedMappings(ctx context.Context, opts Options, resolvers []NamedMappingsResolver) (namedMappings map[tree.Path]template.NamedMappings, err error) {
+	namedMappings = map[tree.Path]template.NamedMappings{}
+
+	// Deep copy namedMappings from opts as initial
+	for path, mappings := range opts.NamedMappings {
+		namedMappings[path] = template.NamedMappings{}
+		for key, mapping := range mappings {
+			namedMappings[path][key] = mapping
+		}
+	}
+	opts.NamedMappings = namedMappings // All resolvers will use and update this same underlying named mappings
+
+	globalPath := tree.NewPath()
+	for _, resolver := range resolvers {
+		resolved, err := resolver.ResolveGlobal(ctx, opts)
+		if err != nil {
+			return nil, err
+		}
+		namedMappings[globalPath] = namedMappings[globalPath].Merge(resolved) // The early resolved named mappings take priority
+	}
+
+	return namedMappings, nil
 }
 
 func MergeNamedMappings(namedMappings map[tree.Path]template.NamedMappings, other map[tree.Path]template.NamedMappings) map[tree.Path]template.NamedMappings {

@@ -150,10 +150,10 @@ services:
 		},
 		WorkingDir: abs,
 	}, func(options *Options) {
-		options.ResolvePaths = false
+		options.ResolvePaths = true
 	})
 	assert.NilError(t, err)
-	assert.Equal(t, p.Services["test"].Build.Context, filepath.Join("testdata", "extends"))
+	assert.Equal(t, p.Services["test"].Build.Context, filepath.Join(abs, "testdata", "extends"))
 }
 
 func TestExtendsNil(t *testing.T) {

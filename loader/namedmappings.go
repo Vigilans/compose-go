@@ -20,6 +20,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"path/filepath"
 	"strconv"
 
 	"github.com/compose-spec/compose-go/v2/consts"
@@ -77,7 +78,6 @@ func (r *modelNamedMappingsResolver) Resolve(ctx context.Context, value interfac
 	switch {
 	case path.Matches(tree.NewPath()):
 		return template.NamedMappings{
-			consts.ProjectMapping:    template.ToVariadicMapping(func(keys ...string) (string, bool) { return r.projectMapping(scope, keys...) }),
 			consts.ServicesMapping:   template.ToVariadicMapping(func(keys ...string) (string, bool) { return r.crossRefMapping(scope, consts.ServiceMapping, keys...) }),
 			consts.ContainersMapping: template.ToVariadicMapping(func(keys ...string) (string, bool) { return r.crossRefMapping(scope, consts.ContainerMapping, keys...) }),
 			consts.NetworksMapping:   template.ToVariadicMapping(func(keys ...string) (string, bool) { return r.crossRefMapping(scope, consts.NetworkMapping, keys...) }),
@@ -117,12 +117,57 @@ func (r *modelNamedMappingsResolver) Resolve(ctx context.Context, value interfac
 	}
 }
 
-func (r *modelNamedMappingsResolver) projectMapping(_ *modelNamedMappingsScope, keys ...string) (string, bool) {
+func (r *modelNamedMappingsResolver) ResolveGlobal(ctx context.Context, opts interp.Options) (template.NamedMappings, error) {
+	scope := &modelNamedMappingsScope{
+		ctx:          ctx,
+		opts:         opts,
+		caches:       map[string]map[string]*string{},
+		cycleTracker: map[string]map[string]bool{},
+	}
+	return template.NamedMappings{
+		consts.ProjectMapping: template.ToVariadicMapping(func(keys ...string) (string, bool) { return r.projectMapping(scope, keys...) }),
+		consts.ComposeMapping: template.ToVariadicMapping(func(keys ...string) (string, bool) { return r.composeMapping(scope, keys...) }),
+	}, nil
+}
+
+func (r *modelNamedMappingsResolver) projectMapping(scope *modelNamedMappingsScope, keys ...string) (string, bool) {
 	switch keys[0] {
 	case "name":
+		if name, ok := scope.ctx.Value(consts.ProjectNameKey{}).(string); ok {
+			return name, true
+		}
 		return r.opts.projectName, true
 	case "working-dir": // TODO: working_dir or working-dir?
+		if path, ok := scope.ctx.Value(consts.ProjectDirKey{}).(string); ok {
+			return path, true
+		}
 		return r.configDetails.WorkingDir, true
+	}
+	return "", false
+}
+
+func (r *modelNamedMappingsResolver) composeMapping(scope *modelNamedMappingsScope, keys ...string) (string, bool) {
+	switch keys[0] {
+	case "root-dir":
+		return r.configDetails.WorkingDir, true
+	case "working-dir":
+		if path, ok := scope.ctx.Value(consts.WorkingDirKey{}).(string); ok {
+			return path, true
+		}
+		return r.configDetails.WorkingDir, true
+	case "config-dir":
+		return scope.cachedMapping(consts.ComposeMapping, keys[0], func() (string, bool) {
+			if path, ok := scope.ctx.Value(consts.ComposeFileKey{}).(string); ok {
+				for _, loader := range r.opts.ResourceLoaders {
+					if loader.Accept(path) {
+						path = utils.Must(loader.Load(scope.ctx, path))
+						path = utils.Must(filepath.Abs(path))
+						return filepath.Dir(path), true
+					}
+				}
+			}
+			return "", false
+		})
 	}
 	return "", false
 }
@@ -293,7 +338,7 @@ func (r *modelNamedMappingsResolver) fileObjectMapping(scope *modelNamedMappings
 			if value := fileObject["file"]; value != nil {
 				model := wrapValueWithPath(scope.path.Next("file"), value)
 				model = utils.Must(interp.Interpolate(model, scope.opts))
-				model = utils.Must(model, paths.ResolveRelativePaths(model, r.configDetails.WorkingDir, r.opts.RemoteResourceFilters()))
+				model = utils.Must(r.resolveRelativePaths(scope, model))
 				return unwrapValueWithPath(scope.path.Next("file"), model).(string), true
 			}
 			return "", false
@@ -341,7 +386,7 @@ func (r *modelNamedMappingsResolver) containerEnvMapping(scope *modelNamedMappin
 			model = utils.Must(transform.Canonical(model, false))
 
 			// Resolve env_file path to absolute
-			utils.Must(model, paths.ResolveRelativePaths(model, r.configDetails.WorkingDir, r.opts.RemoteResourceFilters()))
+			model = utils.Must(r.resolveRelativePaths(scope, model))
 
 			// Apply modelToProject to reuse `WithServicesEnvironmentResolved` logic
 			project := utils.Must(r.modelToProject(model))
@@ -373,7 +418,7 @@ func (r *modelNamedMappingsResolver) labelsMapping(scope *modelNamedMappingsScop
 			model = utils.Must(transform.Canonical(model, false))
 
 			// Resolve label_file path to absolute
-			utils.Must(model, paths.ResolveRelativePaths(model, r.configDetails.WorkingDir, r.opts.RemoteResourceFilters()))
+			model = utils.Must(r.resolveRelativePaths(scope, model))
 
 			// Apply modelToProject to reuse `Labels.DecodeMapstructure` logic
 			project := utils.Must(r.modelToProject(model))
@@ -475,6 +520,19 @@ func (r *modelNamedMappingsResolver) modelToProject(model map[string]interface{}
 	opts := r.opts.clone()
 	opts.SkipConsistencyCheck = true
 	return modelToProject(model, opts, r.configDetails)
+}
+
+func (r *modelNamedMappingsResolver) resolveRelativePaths(scope *modelNamedMappingsScope, model map[string]interface{}) (map[string]interface{}, error) {
+	model = utils.WrapPair(model, func(path tree.Path, _ any) any {
+		if composeMapping, ok := interp.LookupNamedMappings(scope.opts.NamedMappings, path)[consts.ComposeMapping]; ok {
+			if workingDir, ok := composeMapping("working-dir"); ok {
+				return workingDir
+			}
+		}
+		return nil // Will be omitted by `utils.UnwrapPairWithValues[string]`
+	})
+	model, workingDirMapping := utils.UnwrapPairWithValues[string](model)
+	return model, paths.ResolveRelativePathsWithBaseMapping(model, r.configDetails.WorkingDir, r.opts.RemoteResourceFilters(), workingDirMapping)
 }
 
 func (s *modelNamedMappingsScope) cachedMapping(name string, key string, onCacheMiss func() (string, bool)) (string, bool) {

@@ -62,6 +62,29 @@ func TestPathMatches(t *testing.T) {
 			pattern:  NewPath("one", "two", "three"),
 			expected: true,
 		},
+		{
+			doc:      "pattern match with match-list part",
+			path:     NewPath("one", "123", "three"),
+			pattern:  NewPath("one", PathMatchList, "three"),
+			expected: true,
+		},
+		{
+			doc:      "pattern match with match-list part (with brackets)",
+			path:     NewPath("one", "[0]", "three"),
+			pattern:  NewPath("one", PathMatchList, "three"),
+			expected: true,
+		},
+		{
+			doc:      "pattern match with match-list part (with only brackets)",
+			path:     NewPath("one", "[]", "three"), // "[]" == PathMatchList
+			pattern:  NewPath("one", PathMatchList, "three"),
+			expected: true,
+		},
+		{
+			doc:     "pattern mismatch with match-list part",
+			path:    NewPath("one", "0xa", "three"),
+			pattern: NewPath("one", PathMatchList, "three"),
+		},
 	}
 	for _, testcase := range testcases {
 		assert.Check(t, is.Equal(testcase.expected, testcase.path.Matches(testcase.pattern)))

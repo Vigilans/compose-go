@@ -41,16 +41,16 @@ services:
 `, `
 services:
   test:
-    image: foo
+    image: !right foo
     devices:
-      - '/dev/sda:/dev/sda'
-      - '/dev/sdb:/dev/sdb'
-      - '/dev/sdc:/dev/sdc'
-      - '/dev/sdd:/dev/sdd'
-      - '/dev/sde:/dev/sde'
-      - '/dev/sdf:/dev/sdf'
-      - '/dev/sdg:/dev/sdg'
-      - '/dev/sdh:/dev/sdh'
+      - !right '/dev/sda:/dev/sda'
+      - !right '/dev/sdb:/dev/sdb'
+      - !right '/dev/sdc:/dev/sdc'
+      - !right '/dev/sdd:/dev/sdd'
+      - !left  '/dev/sde:/dev/sde'
+      - !left  '/dev/sdf:/dev/sdf'
+      - !left  '/dev/sdg:/dev/sdg'
+      - !left  '/dev/sdh:/dev/sdh'
 `)
 }
 
@@ -74,11 +74,11 @@ services:
 `, `
 services:
   test:
-    image: foo
+    image: !right foo
     devices:
-      - '/dev/nvme0n1p1:/dev/sda'
-      - '/dev/nvme1n1p1:/dev/sdb'
-      - '/dev/nvme2n1p1:/dev/sdc'
-      - '/dev/sdd:/dev/sdd'
+      - !left  '/dev/nvme0n1p1:/dev/sda'
+      - !left  '/dev/nvme1n1p1:/dev/sdb'
+      - !left  '/dev/nvme2n1p1:/dev/sdc'
+      - !right '/dev/sdd:/dev/sdd'
 `)
 }

@@ -22,22 +22,23 @@ import (
 	"os"
 	"testing"
 
+	"github.com/compose-spec/compose-go/v2/consts"
 	interp "github.com/compose-spec/compose-go/v2/interpolation"
 	"gopkg.in/yaml.v3"
 	"gotest.tools/v3/assert"
 	is "gotest.tools/v3/assert/cmp"
 )
 
-// Tests ProjectMapping
+// Tests ProjectMapping/ComposeMapping
 func TestModelNamedMappingsResolverWithProjectMapping(t *testing.T) {
 	env := map[string]string{}
 	model := map[string]interface{}{
 		"name":         "test-project",
-		"x-test-field": "${project[name]} ${project[working-dir]}",
+		"x-test-field": "${project[name]} ${project[working-dir]} ${compose[root-dir]} ${compose[config-dir]}",
 	}
 	expected := map[string]interface{}{
 		"name":         "test-project",
-		"x-test-field": fmt.Sprintf("test-project %s", os.Getenv("PWD")),
+		"x-test-field": fmt.Sprintf("test-project %s %s %s", os.Getenv("PWD"), os.Getenv("PWD"), os.Getenv("PWD")),
 	}
 	assertInterpolateModel(t, env, model, expected)
 }
@@ -646,6 +647,7 @@ func assertInterpolateModel(t *testing.T, env map[string]string, model map[strin
 	assert.NilError(t, projectName(&configDetails, opts))
 
 	ctx := context.Background()
+	ctx = context.WithValue(ctx, consts.ComposeFileKey{}, configDetails.ConfigFiles[0].Filename)
 
 	resolvers := []interp.NamedMappingsResolver{
 		interp.EnvNamedMappingsResolver{},

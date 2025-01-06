@@ -20,10 +20,11 @@ import (
 	"path"
 	"path/filepath"
 
+	"github.com/compose-spec/compose-go/v2/tree"
 	"github.com/compose-spec/compose-go/v2/utils"
 )
 
-func (r *relativePathsResolver) maybeUnixPath(a any) (any, error) {
+func (r *relativePathsResolver) maybeUnixPath(a any, treePath tree.Path) (any, error) {
 	p := a.(string)
 	p = ExpandUser(p)
 	// Check if source is an absolute path (either Unix or Windows), to
@@ -36,13 +37,17 @@ func (r *relativePathsResolver) maybeUnixPath(a any) (any, error) {
 		if filepath.IsAbs(p) {
 			return p, nil
 		}
-		return filepath.Join(r.workingDir, p), nil
+		workingDir, err := r.resolveWorkingDir(treePath)
+		if err != nil {
+			return nil, err
+		}
+		return filepath.Join(workingDir, p), nil
 	}
 	return p, nil
 }
 
-func (r *relativePathsResolver) absSymbolicLink(value any) (any, error) {
-	abs, err := r.absPath(value)
+func (r *relativePathsResolver) absSymbolicLink(value any, treePath tree.Path) (any, error) {
+	abs, err := r.absPath(value, treePath)
 	if err != nil {
 		return nil, err
 	}

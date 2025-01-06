@@ -16,10 +16,12 @@
 
 package paths
 
-func (r *relativePathsResolver) absExtendsPath(value any) (any, error) {
+import "github.com/compose-spec/compose-go/v2/tree"
+
+func (r *relativePathsResolver) absExtendsPath(value any, treePath tree.Path) (any, error) {
 	v := value.(string)
 	if r.isRemoteResource(v) {
 		return v, nil
 	}
-	return r.absPath(v)
+	return r.absPath(v, treePath)
 }

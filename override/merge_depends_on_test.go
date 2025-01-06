@@ -20,31 +20,32 @@ import (
 	"testing"
 )
 
-// override using the same logging driver will override driver options
-func Test_mergeYamlServiceMount(t *testing.T) {
+func TestMergeServiceDependsOn(t *testing.T) {
 	assertMergeYaml(t, `
 services:
   test:
     image: foo
-    secrets:
-      - foo
-      - bar
-      - zot
+    depends_on:
+      - dependency1
+      - dependency2
 `, `
 services:
   test:
-    image: foo
-    secrets:
-      - source: zot
-        target: /run/secrets/foo
+    depends_on:
+      dependency1:
+        condition: service_healthy
+      dependency3:
 `, `
 services:
   test:
-    image: !left foo
-    secrets:
-      - source: !left zot
-        target: !left /run/secrets/foo
-      - !right bar
-      - !right zot
+    image: !right foo
+    depends_on:
+      dependency1:
+        condition: !left service_healthy
+        required: !right true
+      dependency2:
+        condition: !right service_started
+        required: !right true
+      dependency3: !left
 `)
 }
